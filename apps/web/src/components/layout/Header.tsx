@@ -21,7 +21,6 @@ export const Header: React.FC = () => {
 
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(3);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Refs for auto-closing dropdowns when clicking outside
@@ -89,11 +88,187 @@ export const Header: React.FC = () => {
   const [newPasswordInput, setNewPasswordInput] = useState('');
   const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
 
-  const notifications = [
-    { id: 1, title: 'Cảnh báo vắng 2 buổi', desc: 'Học sinh Nguyễn Văn Minh Anh vắng chưa xin phép', time: '10 phút trước' },
-    { id: 2, title: 'Đơn xin nghỉ mới', desc: 'Phụ huynh học sinh Trần Thị Anh nộp đơn xin nghỉ', time: '1 giờ trước' },
-    { id: 3, title: 'Cần duyệt bảng điểm', desc: 'Sổ điểm học kỳ II môn Toán đã hoàn thành 100%', time: '3 giờ trước' },
-  ];
+  // Dynamic Real System Notifications State
+  const [notificationFilter, setNotificationFilter] = useState<'all' | 'unread'>('all');
+  const [readNotifIds, setReadNotifIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('thcs_read_notification_ids');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [];
+  });
+
+  const generatedNotifications = useMemo(() => {
+    const list: Array<{
+      id: string;
+      type: string;
+      title: string;
+      desc: string;
+      time: string;
+      targetUrl: string;
+      icon: string;
+      iconBg: string;
+      isRead: boolean;
+    }> = [];
+    const className = selectedClass?.name || 'Lớp học';
+    const classId = selectedClass?.id || 0;
+
+    // 1. Check Pending Leave Requests for selectedClass
+    try {
+      const leaveCached = localStorage.getItem(`thcs_leave_requests_class_${classId}`) || localStorage.getItem('thcs_leave_requests');
+      if (leaveCached) {
+        const parsed = JSON.parse(leaveCached);
+        if (Array.isArray(parsed)) {
+          const pending = parsed.filter((r: any) => r.status === 'PENDING');
+          if (pending.length > 0) {
+            const first = pending[0];
+            list.push({
+              id: `leave-req-${first.id || Date.now()}`,
+              type: 'leave_request',
+              title: `Đơn xin nghỉ học mới (${pending.length} đơn chờ duyệt)`,
+              desc: `Học sinh ${first.student_name || 'trong lớp'} gửi đơn xin nghỉ (${first.reason || 'Sốt / việc gia đình'})`,
+              time: 'Vừa xong',
+              targetUrl: `/app/classes/${classId}/leave-requests`,
+              icon: 'fa-solid fa-file-signature text-[#22C997]',
+              iconBg: 'bg-[#E6F9F3]',
+              isRead: readNotifIds.includes(`leave-req-${first.id || Date.now()}`),
+            });
+          }
+        }
+      }
+    } catch (e) {}
+
+    // 2. Check Attendance Absences
+    try {
+      const attCached = localStorage.getItem(`thcs_today_attendance_${classId}`);
+      if (attCached) {
+        const parsed = JSON.parse(attCached);
+        if (Array.isArray(parsed)) {
+          const unexcused = parsed.filter((a: any) => a.status === 'UNEXCUSED_ABSENCE' || a.status === 'TRUANCY');
+          if (unexcused.length > 0) {
+            list.push({
+              id: `att-warning-${classId}`,
+              type: 'attendance',
+              title: `Cảnh báo vắng mặt chưa xin phép`,
+              desc: `Lớp ${className} có ${unexcused.length} học sinh vắng chưa có đơn nghỉ hôm nay`,
+              time: 'Hôm nay',
+              targetUrl: `/app/classes/${classId}/attendance`,
+              icon: 'fa-solid fa-triangle-exclamation text-[#FF5D68]',
+              iconBg: 'bg-[#FFEFEF]',
+              isRead: readNotifIds.includes(`att-warning-${classId}`),
+            });
+          }
+        }
+      }
+    } catch (e) {}
+
+    // 3. Check Role Activation Requests for SuperAdmin / Admin
+    if (isSuperAdmin) {
+      try {
+        const usersCached = localStorage.getItem('thcs_admin_users');
+        if (usersCached) {
+          const parsed = JSON.parse(usersCached);
+          if (Array.isArray(parsed)) {
+            const pendingAct = parsed.filter((u: any) => u.role === 'standard_user' || u.activation_request?.status === 'pending');
+            if (pendingAct.length > 0) {
+              list.push({
+                id: `role-act-${pendingAct.length}`,
+                type: 'activation',
+                title: `Yêu cầu kích hoạt vai trò tài khoản (${pendingAct.length})`,
+                desc: `Có ${pendingAct.length} tài khoản mới (hs-, gvbm-, phhs-) đang chờ SuperAdmin phê duyệt`,
+                time: 'Mới gửi',
+                targetUrl: '/app/admin',
+                icon: 'fa-solid fa-user-check text-[#6C63FF]',
+                iconBg: 'bg-[#EEECFF]',
+                isRead: readNotifIds.includes(`role-act-${pendingAct.length}`),
+              });
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 4. Incident & Conduct Reports
+    try {
+      const incCached = localStorage.getItem(`thcs_incidents_${classId}`);
+      if (incCached) {
+        const parsed = JSON.parse(incCached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          list.push({
+            id: `incident-notif-${classId}`,
+            type: 'incident',
+            title: `Báo cáo kỷ luật / vi phạm mới`,
+            desc: `Ghi nhận vi phạm nếp sống mới của học sinh Lớp ${className}`,
+            time: '1 giờ trước',
+            targetUrl: `/app/classes/${classId}/incidents`,
+            icon: 'fa-solid fa-shield-cat text-[#B47800]',
+            iconBg: 'bg-[#FFF9EB]',
+            isRead: readNotifIds.includes(`incident-notif-${classId}`),
+          });
+        }
+      }
+    } catch (e) {}
+
+    // 5. Default School System Announcements
+    list.push({
+      id: `announcement-sys-01`,
+      type: 'announcement',
+      title: `Nhắc nhở nộp Sổ điểm Học kỳ II`,
+      desc: `Yêu cầu hoàn thành nhập điểm thành phần cho Lớp ${className} trước ngày 30/05`,
+      time: '2 giờ trước',
+      targetUrl: `/app/classes/${classId}/gradebook`,
+      icon: 'fa-solid fa-bullhorn text-[#6C63FF]',
+      iconBg: 'bg-[#EEECFF]',
+      isRead: readNotifIds.includes(`announcement-sys-01`),
+    });
+
+    list.push({
+      id: `announcement-sys-02`,
+      type: 'system',
+      title: `Cập nhật hệ thống Quản lý THCS v2.0`,
+      desc: `Hệ thống vừa cập nhật phân quyền tự động theo lớp học và bảo mật tài khoản`,
+      time: 'Hôm nay',
+      targetUrl: `/app/dashboard`,
+      icon: 'fa-solid fa-circle-check text-[#0E8360]',
+      iconBg: 'bg-[#E6F9F3]',
+      isRead: readNotifIds.includes(`announcement-sys-02`),
+    });
+
+    return list;
+  }, [selectedClass, isSuperAdmin, readNotifIds]);
+
+  const unreadCount = useMemo(() => {
+    return generatedNotifications.filter(n => !n.isRead).length;
+  }, [generatedNotifications]);
+
+  const filteredNotifications = useMemo(() => {
+    if (notificationFilter === 'unread') {
+      return generatedNotifications.filter(n => !n.isRead);
+    }
+    return generatedNotifications;
+  }, [generatedNotifications, notificationFilter]);
+
+  const handleMarkAllAsRead = () => {
+    const allIds = generatedNotifications.map(n => n.id);
+    const updated = Array.from(new Set([...readNotifIds, ...allIds]));
+    setReadNotifIds(updated);
+    try {
+      localStorage.setItem('thcs_read_notification_ids', JSON.stringify(updated));
+    } catch (e) {}
+    showToast('🎉 Đã đánh dấu đọc tất cả thông báo!');
+  };
+
+  const handleNotificationClick = (item: any) => {
+    if (!readNotifIds.includes(item.id)) {
+      const updated = [...readNotifIds, item.id];
+      setReadNotifIds(updated);
+      try {
+        localStorage.setItem('thcs_read_notification_ids', JSON.stringify(updated));
+      } catch (e) {}
+    }
+    setShowNotifications(false);
+    navigate(item.targetUrl);
+  };
 
 
 
@@ -316,34 +491,92 @@ export const Header: React.FC = () => {
           </button>
 
           {showNotifications && (
-            <div className="absolute right-0 mt-2 w-80 rounded-2xl bg-white border border-[#E1E6F0] p-4 shadow-2xl z-50 animate-in fade-in">
-              <div className="flex items-center justify-between border-b border-[#E1E6F0] pb-2 mb-3">
+            <div className="absolute right-0 mt-2 w-96 rounded-3xl bg-white border border-[#E1E6F0] p-4 shadow-2xl z-50 animate-in fade-in space-y-3">
+              {/* Header Title & Actions */}
+              <div className="flex items-center justify-between border-b border-[#E1E6F0] pb-2.5">
                 <div className="flex items-center gap-2">
+                  <i className="fa-solid fa-bell text-[#6C63FF] text-sm"></i>
                   <h4 className="text-xs font-extrabold text-[#18243A]">Thông Báo Hệ Thống</h4>
                   {unreadCount > 0 && (
-                    <span className="bg-[#FF5D68] text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                    <span className="bg-[#FF5D68] text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full animate-pulse">
                       {unreadCount} mới
                     </span>
                   )}
                 </div>
+                {unreadCount > 0 && (
+                  <button
+                    onClick={handleMarkAllAsRead}
+                    className="text-[11px] font-extrabold text-[#6C63FF] hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <i className="fa-solid fa-check-double text-xs"></i> Đọc tất cả
+                  </button>
+                )}
+              </div>
+
+              {/* Subtabs Filter */}
+              <div className="flex items-center gap-2 border-b border-[#F0F2FA] pb-2">
                 <button
-                  onClick={() => setUnreadCount(0)}
-                  className="text-[11px] font-extrabold text-[#6C63FF] hover:underline flex items-center gap-1"
+                  onClick={() => setNotificationFilter('all')}
+                  className={`px-3 py-1 rounded-xl text-[11px] font-extrabold transition-colors cursor-pointer ${
+                    notificationFilter === 'all'
+                      ? 'bg-[#EEECFF] text-[#6C63FF] border border-[#C0BBFD]'
+                      : 'text-[#68758D] hover:bg-[#FAFBFF]'
+                  }`}
                 >
-                  <i className="fa-solid fa-check text-xs"></i> Đọc tất cả
+                  Tất cả ({generatedNotifications.length})
+                </button>
+                <button
+                  onClick={() => setNotificationFilter('unread')}
+                  className={`px-3 py-1 rounded-xl text-[11px] font-extrabold transition-colors cursor-pointer ${
+                    notificationFilter === 'unread'
+                      ? 'bg-[#FFEFEF] text-[#FF5D68] border border-[#FFC0C3]'
+                      : 'text-[#68758D] hover:bg-[#FAFBFF]'
+                  }`}
+                >
+                  Chưa đọc ({unreadCount})
                 </button>
               </div>
 
-              <div className="space-y-2.5 max-h-64 overflow-y-auto">
-                {notifications.map(n => (
-                  <div key={n.id} className="p-2.5 rounded-xl bg-[#FAFBFF] border border-[#E1E6F0] hover:bg-[#EEECFF]/60 transition-colors">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-extrabold text-[#18243A]">{n.title}</span>
-                      <span className="text-[10px] text-[#68758D] font-mono">{n.time}</span>
+              {/* Notification List */}
+              <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                {filteredNotifications.length > 0 ? (
+                  filteredNotifications.map(n => (
+                    <div
+                      key={n.id}
+                      onClick={() => handleNotificationClick(n)}
+                      className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 group relative ${
+                        !n.isRead
+                          ? 'bg-[#FAFBFF] border-[#C0BBFD] shadow-2xs hover:bg-[#EEECFF]/60'
+                          : 'bg-white border-[#E1E6F0] hover:bg-[#FAFBFF]'
+                      }`}
+                    >
+                      <div className={`w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 shadow-2xs ${n.iconBg}`}>
+                        <i className={`${n.icon} text-sm`}></i>
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-1 mb-0.5">
+                          <span className={`text-xs font-extrabold truncate group-hover:text-[#6C63FF] transition-colors ${!n.isRead ? 'text-[#18243A]' : 'text-[#475569]'}`}>
+                            {n.title}
+                          </span>
+                          <span className="text-[10px] text-[#68758D] font-mono shrink-0 whitespace-nowrap">{n.time}</span>
+                        </div>
+                        <p className="text-[11px] text-[#68758D] font-medium leading-relaxed multiline-ellipsis">
+                          {n.desc}
+                        </p>
+                      </div>
+
+                      {!n.isRead && (
+                        <span className="w-2 h-2 rounded-full bg-[#6C63FF] shrink-0 mt-1.5 shadow-2xs" title="Chưa đọc"></span>
+                      )}
                     </div>
-                    <p className="text-[11px] text-[#68758D] font-medium leading-tight">{n.desc}</p>
+                  ))
+                ) : (
+                  <div className="p-6 text-center text-xs font-bold text-[#68758D] bg-[#FAFBFF] rounded-2xl border border-[#E1E6F0]">
+                    <i className="fa-solid fa-bell-slash text-2xl text-[#C0BBFD] mb-2 block"></i>
+                    Không có thông báo nào {notificationFilter === 'unread' ? 'chưa đọc' : ''}
                   </div>
-                ))}
+                )}
               </div>
             </div>
           )}
