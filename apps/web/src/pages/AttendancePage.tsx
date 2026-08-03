@@ -7,11 +7,12 @@ import { Modal } from '../components/ui/Modal';
 import { Lock, Unlock, Save, Search, CheckCircle, RefreshCw } from 'lucide-react';
 
 import { removeVietnameseTones } from '../utils/accountUtils';
+import { logActivity } from '../utils/logger';
 
 const API_BASE = '/thcs/api/attendance';
 
 export const AttendancePage: React.FC = () => {
-  const { selectedClass, studentsList } = useAuth();
+  const { selectedClass, studentsList, currentUser, currentRole } = useAuth();
   const [sessionDate, setSessionDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [sessionType, setSessionType] = useState<'morning' | 'afternoon'>('morning');
   const [searchTerm, setSearchTerm] = useState('');
@@ -110,6 +111,13 @@ export const AttendancePage: React.FC = () => {
         if (json.success) {
           if (lockAfterSave) setIsLocked(true);
           setIsLockModalOpen(false);
+          logActivity(
+            currentUser?.name || 'Giáo viên',
+            currentRole,
+            'ĐIỂM DANH',
+            `Lưu điểm danh ngày ${sessionDate} (${sessionType === 'morning' ? 'Buổi Sáng' : 'Buổi Chiều'}) - Sĩ số ${records.length} học sinh`,
+            String(selectedClass?.id || '')
+          );
           showToast(`🎉 Đã lưu điểm danh ngày ${sessionDate} (${sessionType === 'morning' ? 'Buổi Sáng' : 'Buổi Chiều'}) trực tiếp vào MySQL Database!`);
         } else {
           showToast('⚠️ Lỗi khi lưu: ' + (json.message || 'Không xác định'));

@@ -9,8 +9,10 @@ import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { RoleBadge } from '../components/ui/RoleBadge';
 import { UserAvatar } from '../components/ui/UserAvatar';
+import { logActivity, fetchSystemLogs, clearSystemLogs } from '../utils/logger';
+import type { SystemLogEntry } from '../utils/logger';
 import {
-  Plus, CheckCircle, Lock, Users, School, Key, Crown, Database, Download, Trash2, AlertTriangle, ShieldCheck, Edit, Check, UserCheck, BookOpen, UserPlus
+  Plus, CheckCircle, Lock, Users, School, Key, Crown, Database, Download, Trash2, AlertTriangle, ShieldCheck, Edit, Check, UserCheck, BookOpen, UserPlus, FileText, Filter, Search, RefreshCw, FileDown
 } from 'lucide-react';
 
 export interface SubjectTeacherItem {
@@ -60,8 +62,8 @@ const AVAILABLE_PERMISSIONS: PermissionMeta[] = [
 ];
 
 export const AdminPage: React.FC = () => {
-  const { currentRole, updateUserPassword, selectedClass, setSelectedClass, updateClass, addClass, deleteClass, classesList, studentsList } = useAuth();
-  const [activeTab, setActiveTab] = useState<'classes' | 'subject_teachers' | 'rbac' | 'users' | 'activations' | 'database'>('classes');
+  const { currentRole, currentUser, updateUserPassword, selectedClass, setSelectedClass, updateClass, addClass, deleteClass, classesList, studentsList } = useAuth();
+  const [activeTab, setActiveTab] = useState<'classes' | 'subject_teachers' | 'rbac' | 'users' | 'activations' | 'database' | 'logs'>('classes');
 
   // Subject Teachers State
   const [subjectTeachers, setSubjectTeachers] = useState<SubjectTeacherItem[]>(() => {
@@ -208,6 +210,59 @@ export const AdminPage: React.FC = () => {
   const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(new Set());
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
 
+  // System Activity Logs State (SuperAdmin Only)
+  const [logsList, setLogsList] = useState<SystemLogEntry[]>([]);
+  const [logFilterType, setLogFilterType] = useState<string>('all');
+  const [logSearchQuery, setLogSearchQuery] = useState<string>('');
+  const [isClearLogsModalOpen, setIsClearLogsModalOpen] = useState<boolean>(false);
+
+  const reloadLogs = () => {
+    if (currentRole === 'superadmin') {
+      fetchSystemLogs().then(data => {
+        if (data && Array.isArray(data)) setLogsList(data);
+      });
+    }
+  };
+
+  useEffect(() => {
+    reloadLogs();
+  }, [currentRole, activeTab]);
+
+  const handleClearLogsConfirm = async () => {
+    await clearSystemLogs();
+    setLogsList([]);
+    setIsClearLogsModalOpen(false);
+    showToast('🧹 Đã xóa toàn bộ nhật ký hoạt động hệ thống!');
+  };
+
+  const handleExportLogsCSV = () => {
+    if (logsList.length === 0) {
+      showToast('⚠️ Không có nhật ký nào để xuất file CSV.');
+      return;
+    }
+    const headers = ['ID', 'Thời Gian', 'Người Thực Hiện', 'Vai Trò', 'Loại Thao Tác', 'Nội Dung', 'Phạm Vi/Lớp', 'IP Address'];
+    const rows = logsList.map(l => [
+      l.id,
+      `"${l.created_at || ''}"`,
+      `"${l.user_name || ''}"`,
+      `"${l.user_role || ''}"`,
+      `"${l.action_type || ''}"`,
+      `"${(l.description || '').replace(/"/g, '""')}"`,
+      `"${l.class_id || ''}"`,
+      `"${l.ip_address || ''}"`,
+    ]);
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `nhat_ky_he_thong_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('📥 Đã tải xuống tệp nhật ký hệ thống (.CSV) thành công!');
+  };
+
   const toggleSelectUser = (id: number) => {
     setSelectedUserIds(prev => {
       const next = new Set(prev);
@@ -238,6 +293,12 @@ export const AdminPage: React.FC = () => {
     const toDelete = Array.from(selectedUserIds);
     const updated = userList.filter(u => !toDelete.includes(u.id) || u.role === 'superadmin');
     saveUsersListState(updated);
+    logActivity(
+      currentUser?.name || 'SuperAdmin',
+      currentRole,
+      'TÀI KHOẢN',
+      `Xóa hàng loạt ${toDelete.length} tài khoản người dùng khỏi hệ thống`
+    );
     setSelectedUserIds(new Set());
     setIsBulkDeleteModalOpen(false);
     showToast(`🗑️ Đã xóa thành công ${toDelete.length} tài khoản khỏi hệ thống!`);
@@ -324,6 +385,12 @@ export const AdminPage: React.FC = () => {
     };
 
     addClass(newClassItem);
+    logActivity(
+      currentUser?.name || 'SuperAdmin',
+      currentRole,
+      'CẤU HÌNH',
+      `Tạo lớp học mới: ${newClassName.trim()} (Phòng ${newClassRoom.trim() || '101'})`
+    );
     setIsAddClassModalOpen(false);
     showToast(`🎉 Thêm lớp ${newClassName} thành công!`);
 
@@ -374,6 +441,12 @@ export const AdminPage: React.FC = () => {
     if (!target) return;
     if (confirm(`Bạn có chắc chắn muốn xóa lớp ${target.name}?`)) {
       deleteClass(id);
+      logActivity(
+        currentUser?.name || 'SuperAdmin',
+        currentRole,
+        'CẤU HÌNH',
+        `Xóa lớp học ${target.name} khỏi hệ thống`
+      );
       setEditingClass(null);
       showToast(`Đã xóa ${target.name} khỏi hệ thống!`);
     }
@@ -419,6 +492,12 @@ export const AdminPage: React.FC = () => {
 
     updateUserPassword(newUser.id, passToUse);
     saveUsersListState([newUser, ...userList]);
+    logActivity(
+      currentUser?.name || 'SuperAdmin',
+      currentRole,
+      'TÀI KHOẢN',
+      `Tạo tài khoản mới ${generatedUsername} (Họ tên: ${newUserName.trim()}, Vai trò: ${newUserRole})`
+    );
 
     // Direct MySQL Sync API
     fetch('/thcs/api/users', {
@@ -480,6 +559,12 @@ export const AdminPage: React.FC = () => {
     if (confirm(`Bạn có chắc chắn muốn xóa tài khoản ${target.name} (${target.username}) khỏi hệ thống?`)) {
       const updated = userList.filter(u => u.id !== userId);
       saveUsersListState(updated);
+      logActivity(
+        currentUser?.name || 'SuperAdmin',
+        currentRole,
+        'TÀI KHOẢN',
+        `Xóa tài khoản cá nhân ${target.name} (${target.username})`
+      );
       showToast(`Đã xóa tài khoản ${target.username || target.name} thành công!`);
     }
   };
@@ -801,6 +886,36 @@ export const AdminPage: React.FC = () => {
             </div>
           </div>
         </button>
+
+        {/* Tab 6: Audit Logs (SuperAdmin Only) */}
+        {currentRole === 'superadmin' && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('logs')}
+            className={`p-3 sm:p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+              activeTab === 'logs'
+                ? 'bg-gradient-to-br from-[#FF5D68] to-[#D32F2F] border-[#FF5D68] text-white shadow-lg shadow-[#FF5D68]/25 ring-2 ring-[#FF5D68]/30'
+                : 'bg-white border-[#E1E6F0] text-[#18243A] hover:border-[#FF5D68]/50 hover:bg-[#FFF5F5]'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className={`p-2 rounded-xl ${activeTab === 'logs' ? 'bg-white/20 text-white' : 'bg-[#FFEFEF] text-[#D32F2F]'}`}>
+                <FileText className="h-4 w-4 sm:h-5 sm:w-5" />
+              </div>
+              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                activeTab === 'logs' ? 'bg-white/20 text-white' : 'bg-[#FFEFEF] text-[#D32F2F]'
+              }`}>
+                Chỉ SuperAdmin 🔒
+              </span>
+            </div>
+            <div>
+              <div className="text-xs sm:text-sm font-black leading-tight">Nhật Ký Hoạt Động</div>
+              <div className={`text-[10px] mt-0.5 font-bold ${activeTab === 'logs' ? 'text-white/80' : 'text-[#68758D]'}`}>
+                System Audit Trail
+              </div>
+            </div>
+          </button>
+        )}
       </div>
 
       {/* Tab 1: Class Management */}
@@ -1210,6 +1325,177 @@ export const AdminPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Tab 6: System Activity Audit Logs (SUPERADMIN ONLY) */}
+      {activeTab === 'logs' && currentRole === 'superadmin' && (
+        <div className="clay-card p-5 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E1E6F0] pb-3">
+            <div>
+              <h2 className="text-base font-extrabold text-[#18243A] flex items-center gap-2">
+                <FileText className="h-5 w-5 text-[#FF5D68]" />
+                Nhật Ký Hoạt Động & Audit Log Hệ Thống
+              </h2>
+              <p className="text-xs text-[#68758D] font-bold">
+                Ghi lại toàn bộ thao tác, đăng nhập, thay đổi cấu hình và dữ liệu của tất cả người dùng
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="outline" onClick={reloadLogs} icon={<RefreshCw className="h-4 w-4" />}>
+                Làm Mới
+              </Button>
+              <Button size="sm" variant="mint" onClick={handleExportLogsCSV} icon={<FileDown className="h-4 w-4" />}>
+                Xuất File CSV
+              </Button>
+              <Button size="sm" variant="danger" onClick={() => setIsClearLogsModalOpen(true)} icon={<Trash2 className="h-4 w-4" />}>
+                Xóa Nhật Ký
+              </Button>
+            </div>
+          </div>
+
+          {/* Quick Stats Banner */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-3 rounded-2xl bg-[#FAFBFF] border border-[#E1E6F0]">
+              <div className="text-[11px] font-extrabold text-[#68758D]">Tổng số nhật ký</div>
+              <div className="text-lg font-black text-[#18243A]">{logsList.length}</div>
+            </div>
+            <div className="p-3 rounded-2xl bg-[#E6F9F3] border border-[#A3F0D9]">
+              <div className="text-[11px] font-extrabold text-[#0E8360]">Lượt đăng nhập</div>
+              <div className="text-lg font-black text-[#0E8360]">{logsList.filter(l => l.action_type === 'ĐĂNG NHẬP').length}</div>
+            </div>
+            <div className="p-3 rounded-2xl bg-[#EEECFF] border border-[#C0BBFD]">
+              <div className="text-[11px] font-extrabold text-[#6C63FF]">Thao tác tài khoản</div>
+              <div className="text-lg font-black text-[#6C63FF]">{logsList.filter(l => l.action_type === 'TÀI KHOẢN').length}</div>
+            </div>
+            <div className="p-3 rounded-2xl bg-[#FFF9EB] border border-[#FFE399]">
+              <div className="text-[11px] font-extrabold text-[#B47800]">Sửa đổi điểm/thi đua</div>
+              <div className="text-lg font-black text-[#B47800]">{logsList.filter(l => l.action_type === 'ĐIỂM DANH' || l.action_type === 'THI ĐUA' || l.action_type === 'ĐIỂM SỐ').length}</div>
+            </div>
+          </div>
+
+          {/* Search and Filters */}
+          <div className="flex flex-col sm:flex-row items-center gap-3 bg-[#FAFBFF] p-3 rounded-2xl border border-[#E1E6F0]">
+            <div className="relative flex-1 w-full">
+              <Search className="h-4 w-4 absolute left-3 top-2.5 text-[#68758D]" />
+              <input
+                type="text"
+                value={logSearchQuery}
+                onChange={(e) => setLogSearchQuery(e.target.value)}
+                placeholder="Tìm theo tên người thực hiện, loại thao tác, hoặc nội dung chi tiết..."
+                className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-[#E1E6F0] bg-white text-xs font-bold text-[#18243A] focus:outline-none focus:border-[#6C63FF]"
+              />
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Filter className="h-4 w-4 text-[#68758D]" />
+              <select
+                value={logFilterType}
+                onChange={(e) => setLogFilterType(e.target.value)}
+                className="px-3 py-1.5 rounded-xl border border-[#E1E6F0] bg-white text-xs font-bold text-[#18243A] focus:outline-none"
+              >
+                <option value="all">Tất cả loại thao tác</option>
+                <option value="ĐĂNG NHẬP">🔑 Đăng nhập</option>
+                <option value="TÀI KHOẢN">👤 Tài khoản & User</option>
+                <option value="ĐIỂM DANH">📋 Điểm danh</option>
+                <option value="THI ĐUA">🏆 Thi đua nề nếp</option>
+                <option value="ĐIỂM SỐ">📝 Điểm số môn học</option>
+                <option value="CẤU HÌNH">⚙️ Cấu hình hệ thống</option>
+                <option value="HỌC SINH">👨‍🎓 Hồ sơ học sinh</option>
+                <option value="HỆ THỐNG">⚡ Tác vụ nền</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Logs Table */}
+          <div className="rounded-2xl border border-[#E1E6F0] overflow-hidden">
+            <table className="w-full text-left text-xs font-bold text-[#18243A]">
+              <thead className="bg-[#FAFBFF] border-b border-[#E1E6F0] text-[#68758D] text-[11px] uppercase">
+                <tr>
+                  <th className="p-3">Thời Gian</th>
+                  <th className="p-3">Người Thực Hiện</th>
+                  <th className="p-3">Loại Thao Tác</th>
+                  <th className="p-3">Nội Dung Chi Tiết</th>
+                  <th className="p-3 text-right">Phạm Vi / IP</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E1E6F0]">
+                {logsList
+                  .filter(l => {
+                    if (logFilterType !== 'all' && l.action_type !== logFilterType) return false;
+                    if (!logSearchQuery.trim()) return true;
+                    const q = logSearchQuery.toLowerCase();
+                    return (
+                      (l.user_name || '').toLowerCase().includes(q) ||
+                      (l.action_type || '').toLowerCase().includes(q) ||
+                      (l.description || '').toLowerCase().includes(q) ||
+                      (l.user_role || '').toLowerCase().includes(q)
+                    );
+                  })
+                  .map((log, idx) => (
+                    <tr key={log.id || idx} className="hover:bg-[#FAFBFF]">
+                      <td className="p-3 font-mono text-[11px] text-[#68758D] whitespace-nowrap">{log.created_at || 'Mới đây'}</td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          <UserAvatar name={log.user_name} role={log.user_role as any} size="xs" />
+                          <div>
+                            <div className="font-extrabold text-[#18243A]">{log.user_name}</div>
+                            <RoleBadge role={log.user_role as any} size="sm" showIcon={false} />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border font-mono ${
+                          log.action_type === 'ĐĂNG NHẬP' ? 'bg-[#E6F9F3] text-[#0E8360] border-[#A3F0D9]' :
+                          log.action_type === 'TÀI KHOẢN' ? 'bg-[#EEECFF] text-[#6C63FF] border-[#C0BBFD]' :
+                          log.action_type === 'ĐIỂM DANH' ? 'bg-[#FFF9EB] text-[#B47800] border-[#FFE399]' :
+                          log.action_type === 'THI ĐUA' ? 'bg-[#FFF9EB] text-[#B47800] border-[#FFE399]' :
+                          log.action_type === 'CẤU HÌNH' ? 'bg-[#FFEFEF] text-[#D32F2F] border-[#FFC0C3]' :
+                          'bg-[#FAFBFF] text-[#68758D] border-[#E1E6F0]'
+                        }`}>
+                          {log.action_type}
+                        </span>
+                      </td>
+                      <td className="p-3 text-[#18243A] leading-relaxed max-w-md">{log.description}</td>
+                      <td className="p-3 text-right font-mono text-[11px] text-[#68758D]">
+                        {log.class_id ? `Lớp ID: ${log.class_id}` : log.ip_address || '127.0.0.1'}
+                      </td>
+                    </tr>
+                  ))}
+                {logsList.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="p-8 text-center text-xs font-bold text-[#68758D] bg-[#FAFBFF]">
+                      📭 Chưa có dữ liệu nhật ký hoạt động nào được ghi nhận.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Clear System Logs Confirmation */}
+      <Modal
+        isOpen={isClearLogsModalOpen}
+        onClose={() => setIsClearLogsModalOpen(false)}
+        title="⚠️ Xác Nhận Xóa Toàn Bộ Nhật Ký Hệ Thống"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setIsClearLogsModalOpen(false)}>Hủy bỏ</Button>
+            <Button variant="danger" onClick={handleClearLogsConfirm} icon={<Trash2 className="h-4 w-4" />}>
+              Xóa Toàn Bộ Log
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div className="p-4 rounded-2xl bg-[#FFEFEF] border border-[#FFC0C3] text-xs font-bold text-[#D32F2F] space-y-1">
+            <div className="font-black text-sm flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4" />
+              Cảnh báo bảo mật SuperAdmin!
+            </div>
+            <div>Bạn sắp xóa toàn bộ <span className="font-black">{logsList.length}</span> bản ghi nhật ký hoạt động của hệ thống. Hành động này không thể hoàn tác.</div>
+          </div>
+        </div>
+      </Modal>
 
       {/* Modal Edit Class */}
       <Modal

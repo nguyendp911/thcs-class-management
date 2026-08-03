@@ -7,6 +7,7 @@ import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { RoleBadge } from '../components/ui/RoleBadge';
 import { LogIn, User as UserIcon, Lock, CheckCircle2, AlertCircle, UserCheck } from 'lucide-react';
+import { logActivity } from '../utils/logger';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -140,6 +141,13 @@ export const LoginPage: React.FC = () => {
     }
 
     loginAsUser(userToLogin, resolved.role);
+    logActivity(
+      userToLogin.name || clean,
+      resolved.role,
+      'ĐĂNG NHẬP',
+      `Đăng nhập hệ thống thành công với vai trò ${resolved.label}`,
+      userToLogin.scopes?.[0]?.class_id
+    );
     setToastMessage(`🎉 Đăng nhập thành công với vai trò ${resolved.label}`);
     setTimeout(() => {
       navigate('/app/dashboard');

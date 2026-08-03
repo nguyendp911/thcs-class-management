@@ -159,6 +159,18 @@ try {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
 
+    $pdo->exec("CREATE TABLE IF NOT EXISTS activity_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id VARCHAR(100) NULL,
+        user_name VARCHAR(150) NOT NULL,
+        user_role VARCHAR(50) NOT NULL,
+        action_type VARCHAR(100) NOT NULL,
+        description TEXT NOT NULL,
+        class_id VARCHAR(100) NULL,
+        ip_address VARCHAR(50) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
     try { $pdo->exec("ALTER TABLE classes MODIFY id VARCHAR(100) NOT NULL;"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE students MODIFY class_id VARCHAR(100) NOT NULL;"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE attendance_sessions MODIFY class_id VARCHAR(100) NOT NULL;"); } catch (Exception $e) {}
@@ -181,6 +193,63 @@ if (!file_exists($uploadDir)) {
 $requestUri = $_SERVER['REQUEST_URI'] ?? '';
 $uri = parse_url($requestUri, PHP_URL_PATH) ?? '';
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+
+// ============================================================
+// 0. SYSTEM ACTIVITY LOGS API (/thcs/api/logs)
+// ============================================================
+if (strpos($requestUri, 'api/logs') !== false || strpos($uri, 'api/logs') !== false) {
+    if ($method === 'GET') {
+        $type   = $_GET['type'] ?? null;
+        $role   = $_GET['role'] ?? null;
+        $limit  = intval($_GET['limit'] ?? 500);
+        $search = $_GET['search'] ?? null;
+
+        $sql = "SELECT * FROM activity_logs WHERE 1=1";
+        $params = [];
+        if ($type && $type !== 'all') {
+            $sql .= " AND action_type = :type";
+            $params[':type'] = $type;
+        }
+        if ($role && $role !== 'all') {
+            $sql .= " AND user_role = :role";
+            $params[':role'] = $role;
+        }
+        if ($search) {
+            $sql .= " AND (user_name LIKE :s OR description LIKE :s OR action_type LIKE :s)";
+            $params[':s'] = "%$search%";
+        }
+        $sql .= " ORDER BY id DESC LIMIT $limit";
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $logs = $stmt->fetchAll() ?: [];
+        jsonResponse(['success' => true, 'logs' => $logs]);
+    }
+
+    if ($method === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
+        if (!empty($input['user_name']) && !empty($input['action_type'])) {
+            $stmt = $pdo->prepare("INSERT INTO activity_logs (user_id, user_name, user_role, action_type, description, class_id, ip_address) 
+                VALUES (:uid, :uname, :urole, :atype, :desc, :cid, :ip)");
+            $stmt->execute([
+                ':uid'   => strval($input['user_id'] ?? ''),
+                ':uname' => strval($input['user_name'] ?? 'Hệ thống'),
+                ':urole' => strval($input['user_role'] ?? 'system'),
+                ':atype' => strval($input['action_type'] ?? 'HỆ THỐNG'),
+                ':desc'  => strval($input['description'] ?? ''),
+                ':cid'   => strval($input['class_id'] ?? ''),
+                ':ip'    => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
+            ]);
+            jsonResponse(['success' => true, 'message' => 'Logged successfully']);
+        }
+        jsonResponse(['error' => 'Invalid payload'], 400);
+    }
+
+    if ($method === 'DELETE') {
+        $pdo->exec("TRUNCATE TABLE activity_logs");
+        jsonResponse(['success' => true, 'message' => 'Cleared all logs']);
+    }
+}
 
 // ============================================================
 // 0. SYSTEM DATA MYSQL PERSISTENCE API (/thcs/api/system-data)
