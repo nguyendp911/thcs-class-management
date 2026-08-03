@@ -1,6 +1,8 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { RoleBadge } from '../ui/RoleBadge';
+import { UserAvatar } from '../ui/UserAvatar';
 
 export const Sidebar: React.FC = () => {
   const { selectedClass, currentRole, currentUser } = useAuth();
@@ -127,23 +129,27 @@ export const Sidebar: React.FC = () => {
       </nav>
 
       {/* Sidebar Footer User Card */}
-      <div className="p-3.5 border-t border-[#E1E6F0] bg-[#FAFBFF] flex items-center justify-between text-xs">
+      <div className="p-3.5 border-t border-[#E1E6F0] bg-gradient-to-br from-[#FAFBFF] to-[#F4F3FF] flex items-center justify-between text-xs">
         <div className="flex items-center gap-2.5 truncate">
-          <div className="relative shrink-0">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6C63FF] to-[#8178FF] text-white font-extrabold flex items-center justify-center text-xs shadow-xs">
-              {(displayName || 'U').charAt(0)}
-            </div>
-            <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-[#22C997] ring-2 ring-white"></span>
-          </div>
+          <UserAvatar
+            name={displayName}
+            avatarUrl={currentUser.avatar_url || currentUser.avatar}
+            role={currentRole}
+            size="sm"
+            status="online"
+            showRoleBadge={true}
+          />
 
           <div className="truncate">
             <div className="font-extrabold text-[#18243A] text-xs truncate leading-tight">{displayName}</div>
-            <div className="text-[10px] text-[#0E8360] font-extrabold uppercase leading-tight mt-0.5">Trực tuyến</div>
+            <div className="mt-0.5">
+              <RoleBadge role={currentRole} size="sm" showIcon={false} />
+            </div>
           </div>
         </div>
 
-        <span className="text-[10px] font-extrabold text-[#6C63FF] bg-[#EEECFF] px-2 py-0.5 rounded-md border border-[#C0BBFD]">
-          Pro v1.0
+        <span className="text-[9px] font-extrabold text-[#0E8360] bg-[#E6F9F3] px-2 py-0.5 rounded-md border border-[#A3F0D9] shrink-0">
+          ● Online
         </span>
       </div>
     </aside>

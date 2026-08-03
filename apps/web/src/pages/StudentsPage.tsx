@@ -7,6 +7,7 @@ import { generateUsername, removeVietnameseTones } from '../utils/accountUtils';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
+import { UserAvatar } from '../components/ui/UserAvatar';
 import {
   Search, Eye, CheckCircle, Download, Upload, UserPlus, Camera, Image, FileSpreadsheet, Phone, MessageSquare, Target, MapPin, Trash2, FileDown, AlertTriangle
 } from 'lucide-react';
@@ -665,15 +666,14 @@ export const StudentsPage: React.FC = () => {
                 </td>
                 <td className="p-3">
                   <div className="relative group cursor-pointer" onClick={() => handleOpenPhotoModal(s)}>
-                    {s.avatar_url ? (
-                      <img src={s.avatar_url} alt={s.full_name} className="w-9 h-9 rounded-full object-cover border border-[#C0BBFD]" />
-                    ) : (
-                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#6C63FF] to-[#8178FF] text-white flex items-center justify-center font-extrabold text-xs shadow-xs">
-                        {(s.first_name || s.full_name || 'H').charAt(0)}
-                      </div>
-                    )}
+                    <UserAvatar
+                      name={s.full_name || s.first_name || 'Học sinh'}
+                      avatarUrl={s.avatar_url}
+                      role="student"
+                      size="sm"
+                    />
                     <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Camera className="h-4 w-4 text-white" />
+                      <Camera className="h-3.5 w-3.5 text-white" />
                     </div>
                   </div>
                 </td>

@@ -7,6 +7,8 @@ import { saveToDb } from '../lib/dbSync';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
+import { RoleBadge } from '../components/ui/RoleBadge';
+import { UserAvatar } from '../components/ui/UserAvatar';
 import {
   Plus, CheckCircle, Lock, Users, School, Key, Crown, Database, Download, Trash2, AlertTriangle, ShieldCheck, Edit, Check, UserCheck, BookOpen
 } from 'lucide-react';
@@ -839,15 +841,21 @@ export const AdminPage: React.FC = () => {
               <tbody className="divide-y divide-[#E1E6F0]">
                 {userList.map(u => (
                   <tr key={u.id} className="hover:bg-[#FAFBFF]">
-                    <td className="p-3 font-extrabold">{u.name}</td>
-                    <td className="p-3 font-mono text-[#6C63FF]">{u.username || u.email}</td>
                     <td className="p-3">
-                      <Badge variant={u.role === 'superadmin' ? 'danger' : u.role === 'admin' ? 'warning' : 'purple'}>
-                        {u.role}
-                      </Badge>
+                      <div className="flex items-center gap-2.5">
+                        <UserAvatar name={u.name} avatarUrl={u.avatar_url || u.avatar} role={u.role} size="sm" />
+                        <div>
+                          <div className="font-extrabold text-[#18243A]">{u.name}</div>
+                          <div className="text-[10px] text-[#68758D] font-mono">{u.email || u.public_id}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="p-3 font-mono text-[#6C63FF] font-extrabold">{u.username || u.email}</td>
+                    <td className="p-3">
+                      <RoleBadge role={u.role} size="sm" showIcon={true} />
                     </td>
                     <td className="p-3">
-                      <Badge variant="mint">{u.status}</Badge>
+                      <Badge variant={u.status === 'active' ? 'mint' : 'neutral'}>{u.status === 'active' ? 'Hoạt động' : 'Tạm khóa'}</Badge>
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-2">

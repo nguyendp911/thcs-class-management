@@ -5,7 +5,8 @@ import { mockUsers } from '../lib/mockData';
 import type { RoleType, User } from '../types';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { LogIn, User as UserIcon, Lock, CheckCircle2, AlertCircle, UserCheck, ShieldCheck } from 'lucide-react';
+import { RoleBadge } from '../components/ui/RoleBadge';
+import { LogIn, User as UserIcon, Lock, CheckCircle2, AlertCircle, UserCheck } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -95,22 +96,7 @@ export const LoginPage: React.FC = () => {
 
   const resolvedRoleInfo = resolveRoleForUsername(username);
 
-  const getRoleBadgeStyle = (role: RoleType) => {
-    switch (role) {
-      case 'superadmin':
-        return 'bg-gradient-to-r from-[#FDF4FF] to-[#FAF5FF] border-[#E9D5FF] text-[#9333EA]';
-      case 'admin':
-        return 'bg-[#E6F9F3] border-[#A3F0D9] text-[#0E8360]';
-      case 'homeroom_teacher':
-      case 'subject_teacher':
-        return 'bg-[#EEECFF] border-[#C0BBFD] text-[#6C63FF]';
-      case 'parent':
-        return 'bg-[#FFF9EB] border-[#FFE399] text-[#B47800]';
-      case 'student':
-      default:
-        return 'bg-[#EBF8FF] border-[#BAE6FD] text-[#0284C7]';
-    }
-  };
+
 
   const triggerActivationFlow = (user: User) => {
     const usernameLower = user.username?.toLowerCase() || '';
@@ -273,13 +259,12 @@ export const LoginPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-extrabold text-[#18243A]">Vai trò hệ thống (Tự động xác định theo Tài khoản):</label>
-              <div className={`mt-1.5 w-full rounded-2xl border p-3 text-xs font-extrabold flex items-center justify-between shadow-2xs transition-all ${getRoleBadgeStyle(resolvedRoleInfo.role)}`}>
-                <span className="flex items-center gap-2 truncate">
-                  <ShieldCheck className="h-4 w-4 shrink-0" />
-                  {resolvedRoleInfo.label}
-                </span>
-                <span className="text-[10px] font-black uppercase tracking-wider bg-white/90 backdrop-blur-sm px-2 py-0.5 rounded-lg border border-black/10 shrink-0 ml-2 shadow-2xs">
+              <label className="block text-xs font-extrabold text-[#18243A]">Vai trò hệ thống (Tự động nhận diện):</label>
+              <div className="mt-1.5 w-full rounded-2xl border border-[#E1E6F0] bg-[#FAFBFF] p-3 text-xs font-extrabold flex items-center justify-between shadow-2xs">
+                <div className="flex items-center gap-2 truncate">
+                  <RoleBadge role={resolvedRoleInfo.role} size="md" showIcon={true} />
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-wider bg-[#EEECFF] text-[#6C63FF] px-2 py-0.5 rounded-lg border border-[#C0BBFD] shrink-0 ml-2 shadow-2xs">
                   Tự động gán
                 </span>
               </div>

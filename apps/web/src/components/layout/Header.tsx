@@ -4,8 +4,9 @@ import { useAuth } from '../../context/AuthContext';
 import { mockSchoolYears, mockSemesters } from '../../lib/mockData';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
+import { RoleBadge } from '../ui/RoleBadge';
+import { UserAvatar } from '../ui/UserAvatar';
 import { removeVietnameseTones } from '../../utils/accountUtils';
-import type { RoleType } from '../../types';
 
 export const Header: React.FC = () => {
   const navigate = useNavigate();
@@ -94,15 +95,7 @@ export const Header: React.FC = () => {
     { id: 3, title: 'Cần duyệt bảng điểm', desc: 'Sổ điểm học kỳ II môn Toán đã hoàn thành 100%', time: '3 giờ trước' },
   ];
 
-  const roleLabels: Record<RoleType, string> = {
-    superadmin: 'SuperAdmin Cao cấp',
-    homeroom_teacher: 'Giáo viên Chủ nhiệm',
-    subject_teacher: 'Giáo viên Bộ môn',
-    admin: 'System Admin',
-    parent: 'Phụ huynh Học sinh',
-    student: 'Học sinh Lớp 7A1',
-    standard_user: 'Tài khoản thường (Chưa kích hoạt)',
-  };
+
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -306,14 +299,8 @@ export const Header: React.FC = () => {
       {/* Right Flex Group: Fixed Account Role Badge + Notifications + User Profile */}
       <div className="flex items-center gap-2 md:gap-3 shrink-0">
         {/* Fixed Active Account Role Badge */}
-        <div className="hidden sm:flex items-center gap-2 bg-[#EEECFF] border border-[#C0BBFD] px-3 py-1.5 rounded-xl shadow-2xs shrink-0">
-          <i className="fa-solid fa-user-check text-[#6C63FF] text-sm shrink-0"></i>
-          <div className="flex flex-col text-left">
-            <span className="text-[9px] uppercase font-extrabold text-[#6C63FF] leading-none">Vai trò tài khoản</span>
-            <span className="text-xs font-extrabold text-[#18243A] leading-tight">
-              {roleLabels[currentRole]}
-            </span>
-          </div>
+        <div className="hidden sm:flex items-center shrink-0">
+          <RoleBadge role={currentRole} size="md" showIcon={true} />
         </div>
 
         {/* Notifications Bell */}
@@ -366,30 +353,42 @@ export const Header: React.FC = () => {
         <div ref={userMenuRef} className="relative shrink-0">
           <button
             onClick={() => { setShowUserMenu(!showUserMenu); setShowNotifications(false); }}
-            className="flex items-center gap-2 pl-2 border-l border-[#E1E6F0] hover:opacity-80 transition-opacity cursor-pointer"
+            className="flex items-center gap-2 pl-2 border-l border-[#E1E6F0] hover:opacity-90 transition-opacity cursor-pointer group"
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#6C63FF] to-[#8178FF] font-extrabold text-white text-xs shadow-md shrink-0">
-              {(displayName || 'U').charAt(0)}
-            </div>
+            <UserAvatar
+              name={displayName}
+              avatarUrl={currentUser.avatar_url || currentUser.avatar}
+              role={currentRole}
+              size="sm"
+              status="online"
+              showRoleBadge={true}
+            />
             <div className="hidden lg:flex flex-col text-left shrink-0">
-              <span className="text-xs font-extrabold text-[#18243A] leading-tight whitespace-nowrap">{displayName}</span>
-              <span className="text-[10px] text-[#0E8360] font-extrabold leading-tight whitespace-nowrap">{roleLabels[currentRole]}</span>
+              <span className="text-xs font-extrabold text-[#18243A] leading-tight whitespace-nowrap group-hover:text-[#6C63FF] transition-colors">{displayName}</span>
+              <span className="text-[10px] text-[#68758D] font-bold leading-tight whitespace-nowrap">{currentUser.email || 'Hệ thống THCS'}</span>
             </div>
-            <i className="fa-solid fa-chevron-down text-[#68758D] text-xs shrink-0"></i>
+            <i className="fa-solid fa-chevron-down text-[#68758D] text-xs shrink-0 group-hover:text-[#6C63FF] transition-colors"></i>
           </button>
 
           {showUserMenu && (
-            <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-white border border-[#E1E6F0] p-3 shadow-2xl z-50 animate-in fade-in space-y-2">
-              <div className="p-2.5 rounded-xl bg-[#FAFBFF] border border-[#E1E6F0]">
-                <div className="text-xs font-extrabold text-[#18243A]">{displayName}</div>
-                <div className="text-[10px] text-[#68758D] font-semibold">{currentUser.email}</div>
-                <div className="mt-1 flex items-center justify-between">
-                  <span className="inline-block text-[10px] font-extrabold text-[#6C63FF] bg-[#EEECFF] px-2 py-0.5 rounded-md border border-[#C0BBFD]">
-                    {roleLabels[currentRole]}
-                  </span>
-                  <span className={`text-[10px] font-bold ${existingPass ? 'text-[#0E8360]' : 'text-[#D32F2F]'}`}>
-                    {existingPass ? '🔑 Đã có mật khẩu' : '⚠️ Chưa tạo khẩu'}
-                  </span>
+            <div className="absolute right-0 mt-2 w-72 rounded-2xl bg-white border border-[#E1E6F0] p-3.5 shadow-2xl z-50 animate-in fade-in space-y-3">
+              <div className="p-3 rounded-xl bg-gradient-to-br from-[#FAFBFF] to-[#F4F3FF] border border-[#E1E6F0] flex items-center gap-3">
+                <UserAvatar
+                  name={displayName}
+                  avatarUrl={currentUser.avatar_url || currentUser.avatar}
+                  role={currentRole}
+                  size="md"
+                  status="online"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-extrabold text-[#18243A] truncate">{displayName}</div>
+                  <div className="text-[10px] text-[#68758D] font-medium truncate">{currentUser.email}</div>
+                  <div className="mt-1 flex items-center justify-between">
+                    <RoleBadge role={currentRole} size="sm" showIcon={true} />
+                    <span className={`text-[10px] font-bold ${existingPass ? 'text-[#0E8360]' : 'text-[#D32F2F]'}`}>
+                      {existingPass ? '🔑 Đã có MK' : '⚠️ Chưa MK'}
+                    </span>
+                  </div>
                 </div>
               </div>
 

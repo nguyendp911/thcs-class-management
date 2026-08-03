@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
+import { RoleBadge } from '../components/ui/RoleBadge';
+import { UserAvatar } from '../components/ui/UserAvatar';
 import {
   Heart, MessageCircle, Share2, Send, Sparkles, CheckCircle, Trophy, MessageSquare, Lock, Unlock, ShieldAlert,
   Calculator, FlaskConical, Zap
@@ -478,12 +480,10 @@ export const ClassFeedPage: React.FC = () => {
             {/* Multi-Image Composer Box */}
             <div className="clay-card p-5 space-y-4">
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#6C63FF] to-[#8178FF] text-white flex items-center justify-center font-extrabold text-sm shadow-md shrink-0">
-                  {(currentUserCleanName || 'U').charAt(0)}
-                </div>
+                <UserAvatar name={currentUserCleanName} avatarUrl={currentUser?.avatar_url || currentUser?.avatar} role={currentRole} size="md" status="online" />
                 <div className="flex-1">
                   <div className="text-sm font-extrabold text-[#18243A]">{currentUserCleanName}</div>
-                  <div className="text-xs text-[#6C63FF] font-bold">{roleLabels[currentRole]}</div>
+                  <div className="mt-0.5"><RoleBadge role={currentRole} size="sm" showIcon={true} /></div>
                 </div>
               </div>
 
@@ -569,9 +569,7 @@ export const ClassFeedPage: React.FC = () => {
                 <div key={post.id} className="clay-card p-5 space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#6C63FF] to-[#8178FF] text-white flex items-center justify-center font-extrabold text-sm shadow-md shrink-0">
-                        {(post.author_name || 'U').charAt(0)}
-                      </div>
+                      <UserAvatar name={post.author_name} role={post.author_role.includes('SuperAdmin') ? 'superadmin' : post.author_role.includes('Chủ Nhiệm') ? 'homeroom_teacher' : post.author_role.includes('Bộ môn') ? 'subject_teacher' : post.author_role.includes('Phụ huynh') ? 'parent' : 'student'} size="md" />
                       <div>
                         <div className="text-sm font-extrabold text-[#18243A] flex items-center gap-2">
                           {post.author_name}
