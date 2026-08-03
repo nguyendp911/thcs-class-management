@@ -8,6 +8,7 @@ import {
   Calendar, MessageSquare, TrendingUp, Table, CheckCircle2, Plus, BookOpen, Phone
 } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { ExamCountdownWidget } from '../components/ui/ExamCountdownWidget';
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -182,6 +183,9 @@ export const DashboardPage: React.FC = () => {
             Xuất báo cáo
           </Button>
         </div>
+
+        {/* Live Exam Countdown & Event Tracker Widget */}
+        <ExamCountdownWidget />
       </div>
 
       {/* Summary Stat Cards Row */}

@@ -8,6 +8,7 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { UserAvatar } from '../components/ui/UserAvatar';
+import { StudentReportCardModal } from '../components/ui/StudentReportCardModal';
 import {
   Search, Eye, CheckCircle, Download, Upload, UserPlus, Camera, Image, FileSpreadsheet, Phone, MessageSquare, Target, MapPin, Trash2, FileDown, AlertTriangle
 } from 'lucide-react';
@@ -40,6 +41,7 @@ export const StudentsPage: React.FC = () => {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [isSavingToDb, setIsSavingToDb] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [reportCardStudent, setReportCardStudent] = useState<Student | null>(null);
 
   // Delete Modals State
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -718,6 +720,14 @@ export const StudentsPage: React.FC = () => {
                     </button>
 
                     <button
+                      onClick={() => setReportCardStudent(s)}
+                      title="🖨️ In Phiếu Liên Lạc Điện Tử"
+                      className="p-1.5 rounded-lg text-[#6C63FF] hover:bg-[#EEECFF]"
+                    >
+                      <FileSpreadsheet className="h-4 w-4" />
+                    </button>
+
+                    <button
                       onClick={() => navigate(`/app/classes/${selectedClass?.id || 0}/students/${s.public_id}`)}
                       title="Xem hồ sơ"
                       className="p-1.5 rounded-lg text-[#18243A] hover:bg-[#FAFBFF]"
@@ -1090,6 +1100,14 @@ export const StudentsPage: React.FC = () => {
           </p>
         </div>
       </Modal>
+
+      {/* STUDENT ELECTRONIC REPORT CARD MODAL */}
+      <StudentReportCardModal
+        isOpen={Boolean(reportCardStudent)}
+        onClose={() => setReportCardStudent(null)}
+        student={reportCardStudent}
+        classInfo={selectedClass}
+      />
     </div>
   );
 };

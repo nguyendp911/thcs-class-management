@@ -8,6 +8,7 @@ import { RoleBadge } from '../ui/RoleBadge';
 import { UserAvatar } from '../ui/UserAvatar';
 import { removeVietnameseTones } from '../../utils/accountUtils';
 import { syncAllFromDb } from '../../lib/dbSync';
+import { AIEducatorAssistantModal } from '../ui/AIEducatorAssistantModal';
 
 export const Header: React.FC = () => {
   const navigate = useNavigate();
@@ -83,8 +84,9 @@ export const Header: React.FC = () => {
     }
   };
 
-  // Change Password Modal state
+  // Change Password & AI Assistant Modal state
   const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [currentPasswordInput, setCurrentPasswordInput] = useState('');
   const [newPasswordInput, setNewPasswordInput] = useState('');
   const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
@@ -496,6 +498,16 @@ export const Header: React.FC = () => {
 
       {/* Right Flex Group: Fixed Account Role Badge + Notifications + User Profile */}
       <div className="flex items-center gap-2 md:gap-3 shrink-0">
+        {/* AI Educator Assistant Button */}
+        <button
+          onClick={() => setIsAIModalOpen(true)}
+          className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#EEECFF] to-[#FAFBFF] border border-[#C0BBFD] text-xs font-black text-[#6C63FF] hover:bg-[#DED9FF] transition-all cursor-pointer shadow-2xs"
+          title="Mở Trợ lý AI Sinh nhận xét & Đề thi"
+        >
+          <i className="fa-solid fa-wand-magic-sparkles text-amber-500"></i>
+          <span>🤖 AI Trợ lý</span>
+        </button>
+
         {/* Fixed Active Account Role Badge */}
         <div className="hidden sm:flex items-center shrink-0">
           <RoleBadge role={currentRole} size="md" showIcon={true} />
@@ -726,6 +738,12 @@ export const Header: React.FC = () => {
           </div>
         </form>
       </Modal>
+
+      {/* AI EDUCATOR ASSISTANT MODAL */}
+      <AIEducatorAssistantModal
+        isOpen={isAIModalOpen}
+        onClose={() => setIsAIModalOpen(false)}
+      />
     </header>
   );
 };

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -25,9 +25,20 @@ import { AdminPage } from './pages/AdminPage';
 import { ParentPortalPage } from './pages/ParentPortalPage';
 import { StudentPortalPage } from './pages/StudentPortalPage';
 
+import { SeatingChartPage } from './pages/SeatingChartPage';
+import { GlobalSearchModal } from './components/ui/GlobalSearchModal';
+
 const queryClient = new QueryClient();
 
 const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+
+  useEffect(() => {
+    const handleOpenSearch = () => setIsSearchOpen(true);
+    window.addEventListener('open_global_search', handleOpenSearch);
+    return () => window.removeEventListener('open_global_search', handleOpenSearch);
+  }, []);
+
   return (
     <div className="min-h-screen text-[#18243A] font-sans">
       <Sidebar />
@@ -38,6 +49,7 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </main>
         <MobileNav />
       </div>
+      <GlobalSearchModal isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
     </div>
   );
 };
@@ -66,6 +78,7 @@ export const App: React.FC = () => {
             <Route path="/app/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
             <Route path="/app/classes/:classId/feed" element={<ProtectedRoute><ClassFeedPage /></ProtectedRoute>} />
             <Route path="/app/classes/:classId/students" element={<ProtectedRoute><StudentsPage /></ProtectedRoute>} />
+            <Route path="/app/classes/:classId/seating-chart" element={<ProtectedRoute><SeatingChartPage /></ProtectedRoute>} />
             <Route path="/app/classes/:classId/students/:studentId" element={<ProtectedRoute><StudentDetailPage /></ProtectedRoute>} />
             <Route path="/app/students/:studentId" element={<ProtectedRoute><StudentDetailPage /></ProtectedRoute>} />
             <Route path="/app/classes/:classId/attendance" element={<ProtectedRoute><AttendancePage /></ProtectedRoute>} />

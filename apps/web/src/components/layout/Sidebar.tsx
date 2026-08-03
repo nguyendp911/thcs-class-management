@@ -36,6 +36,7 @@ export const Sidebar: React.FC = () => {
       { to: '/app/dashboard', label: 'Tổng quan (Dashboard)', iconClass: 'fa-solid fa-chart-pie', color: 'text-[#6C63FF]', bg: 'bg-[#EEECFF]' },
       { to: `/app/classes/${classId}/feed`, label: 'Bảng tin Lớp học (Feed)', iconClass: 'fa-solid fa-bolt', color: 'text-[#F6B73C]', bg: 'bg-[#FFF9EB]' },
       { to: `/app/classes/${classId}/students`, label: 'Hồ sơ học sinh', iconClass: 'fa-solid fa-user-graduate', color: 'text-[#22C997]', bg: 'bg-[#E6F9F3]' },
+      { to: `/app/classes/${classId}/seating-chart`, label: 'Sơ đồ chỗ ngồi 2D', iconClass: 'fa-solid fa-table-cells', color: 'text-[#22C997]', bg: 'bg-[#E6F9F3]' },
       { to: `/app/classes/${classId}/attendance`, label: 'Chuyên cần & Điểm danh', iconClass: 'fa-solid fa-clipboard-user', color: 'text-[#6C63FF]', bg: 'bg-[#EEECFF]' },
       { to: `/app/classes/${classId}/leave-requests`, label: 'Đơn xin nghỉ', iconClass: 'fa-solid fa-file-signature', color: 'text-[#FF5D68]', bg: 'bg-[#FFEFEF]' },
       { to: `/app/classes/${classId}/gradebook`, label: 'Sổ điểm & Học tập', iconClass: 'fa-solid fa-graduation-cap', color: 'text-[#6C63FF]', bg: 'bg-[#EEECFF]' },
