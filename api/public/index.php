@@ -268,51 +268,72 @@ if (strpos($requestUri, 'api/logs') !== false || strpos($uri, 'api/logs') !== fa
 // STUDENT QR TOKENS & CAMERA VERIFICATION API (/thcs/api/qr)
 // ============================================================
 if (strpos($requestUri, 'api/qr') !== false || strpos($uri, 'api/qr') !== false) {
-    // 1. GET /thcs/api/qr/token?student_id=xxx OR class_id=xxx
-    if (strpos($uri, 'token') !== false || (isset($_GET['action']) && $_GET['action'] === 'token')) {
-        $student_id = $_GET['student_id'] ?? null;
-        $class_id   = $_GET['class_id'] ?? null;
+    // Ensure student_qr_tokens table exists in MySQL database
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS student_qr_tokens (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                student_id VARCHAR(100) NOT NULL,
+                student_code VARCHAR(100) DEFAULT NULL,
+                qr_token VARCHAR(255) NOT NULL,
+                version INT DEFAULT 1,
+                is_revoked TINYINT(1) DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_sid (student_id),
+                INDEX idx_code (student_code),
+                INDEX idx_token (qr_token)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        ");
+    } catch (Exception $e) {}
 
-        if ($student_id) {
-            $stmt = $pdo->prepare("SELECT * FROM student_qr_tokens WHERE student_id = :sid AND is_revoked = 0 LIMIT 1");
-            $stmt->execute([':sid' => $student_id]);
-            $row = $stmt->fetch();
-            if (!$row) {
-                $token = 'THCS-QR-v1-' . bin2hex(random_bytes(16));
-                $iStmt = $pdo->prepare("INSERT INTO student_qr_tokens (student_id, qr_token, version, is_revoked) VALUES (:sid, :tk, 1, 0)");
-                $iStmt->execute([':sid' => $student_id, ':tk' => $token]);
-                jsonResponse(['success' => true, 'qr_token' => $token, 'version' => 1]);
-            } else {
-                jsonResponse(['success' => true, 'qr_token' => $row['qr_token'], 'version' => intval($row['version'])]);
-            }
-        } elseif ($class_id) {
-            $stmt = $pdo->prepare("SELECT s.id as student_id, s.full_name, s.student_code, s.class_id, q.qr_token, q.version 
-                                  FROM students s 
-                                  LEFT JOIN student_qr_tokens q ON s.id = q.student_id AND q.is_revoked = 0 
-                                  WHERE s.class_id = :cid");
-            $stmt->execute([':cid' => $class_id]);
-            $rows = $stmt->fetchAll() ?: [];
-            $results = [];
-            $uStmt = $pdo->prepare("INSERT INTO student_qr_tokens (student_id, qr_token, version, is_revoked) VALUES (:sid, :tk, 1, 0)");
-            foreach ($rows as $r) {
-                $tok = $r['qr_token'];
-                if (!$tok) {
-                    $tok = 'THCS-QR-v1-' . bin2hex(random_bytes(16));
+    try {
+        // 1. GET /thcs/api/qr/token?student_id=xxx OR class_id=xxx
+        if (strpos($uri, 'token') !== false || (isset($_GET['action']) && $_GET['action'] === 'token')) {
+            $student_id = $_GET['student_id'] ?? null;
+            $class_id   = $_GET['class_id'] ?? null;
+
+            if ($student_id) {
+                $stmt = $pdo->prepare("SELECT * FROM student_qr_tokens WHERE (student_id = :sid OR student_code = :sid) AND is_revoked = 0 LIMIT 1");
+                $stmt->execute([':sid' => $student_id]);
+                $row = $stmt->fetch();
+                if (!$row) {
+                    $token = 'THCS-QR-v1-' . bin2hex(random_bytes(16));
                     try {
-                        $uStmt->execute([':sid' => $r['student_id'], ':tk' => $tok]);
-                    } catch (Exception $e) {}
+                        $iStmt = $pdo->prepare("INSERT INTO student_qr_tokens (student_id, qr_token, version, is_revoked) VALUES (:sid, :tk, 1, 0)");
+                        $iStmt->execute([':sid' => $student_id, ':tk' => $token]);
+                    } catch (Exception $ex) {}
+                    jsonResponse(['success' => true, 'qr_token' => $token, 'version' => 1]);
+                } else {
+                    jsonResponse(['success' => true, 'qr_token' => $row['qr_token'], 'version' => intval($row['version'])]);
                 }
-                $results[] = [
-                    'student_id'   => $r['student_id'],
-                    'full_name'    => $r['full_name'],
-                    'student_code' => $r['student_code'],
-                    'qr_token'     => $tok,
-                    'version'      => intval($r['version'] ?? 1),
-                ];
+            } elseif ($class_id) {
+                $stmt = $pdo->prepare("SELECT s.id as student_id, s.full_name, s.student_code, s.class_id, q.qr_token, q.version 
+                                      FROM students s 
+                                      LEFT JOIN student_qr_tokens q ON (s.id = q.student_id OR s.student_code = q.student_code) AND q.is_revoked = 0 
+                                      WHERE s.class_id = :cid OR s.class_id = '1'");
+                $stmt->execute([':cid' => $class_id]);
+                $rows = $stmt->fetchAll() ?: [];
+                $results = [];
+                $uStmt = $pdo->prepare("INSERT INTO student_qr_tokens (student_id, student_code, qr_token, version, is_revoked) VALUES (:sid, :code, :tk, 1, 0)");
+                foreach ($rows as $r) {
+                    $tok = $r['qr_token'];
+                    if (!$tok) {
+                        $tok = 'THCS-QR-v1-' . bin2hex(random_bytes(16));
+                        try {
+                            $uStmt->execute([':sid' => $r['student_id'], ':code' => $r['student_code'], ':tk' => $tok]);
+                        } catch (Exception $e) {}
+                    }
+                    $results[] = [
+                        'student_id'   => $r['student_id'],
+                        'full_name'    => $r['full_name'],
+                        'student_code' => $r['student_code'],
+                        'qr_token'     => $tok,
+                        'version'      => intval($r['version'] ?? 1),
+                    ];
+                }
+                jsonResponse(['success' => true, 'tokens' => $results]);
             }
-            jsonResponse(['success' => true, 'tokens' => $results]);
         }
-    }
 
     // 2. POST /thcs/api/qr/revoke (Revoke and issue new token for lost card)
     if (strpos($uri, 'revoke') !== false) {
@@ -497,6 +518,8 @@ if (strpos($requestUri, 'api/qr') !== false || strpos($uri, 'api/qr') !== false)
             'verified_by' => $teacher_name,
             'message' => "Ghi nhận $statusText thành công!",
         ]);
+    } catch (Throwable $e) {
+        jsonResponse(['success' => false, 'message' => 'Lỗi API QR: ' . $e->getMessage()], 200);
     }
 }
 
