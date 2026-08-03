@@ -58,7 +58,14 @@ export const AttendancePage: React.FC = () => {
       if (res.ok) {
         const json = await res.json();
         if (json.success && json.data?.records?.length > 0) {
-          setRecords(json.data.records);
+          const seen = new Set();
+          const dedupedRecords = json.data.records.filter((r: any) => {
+            const key = r.student_code || r.student_name;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          setRecords(dedupedRecords);
           setIsLocked(!!json.data.is_locked);
           setIsLoading(false);
           return;
@@ -67,14 +74,22 @@ export const AttendancePage: React.FC = () => {
     } catch (e) {
       // DB not reachable: fallback to studentsList
     }
-    // Fallback to fresh session from studentsList
-    const freshRecords = studentsList.map((s) => ({
-      student_id: s.id,
-      student_code: s.student_code,
-      student_name: s.full_name,
-      status: 'NOT_YET' as AttendanceStatus,
-      note: '',
-    }));
+    // Fallback to fresh session from studentsList with deduplication
+    const seen = new Set();
+    const freshRecords = studentsList
+      .filter(s => {
+        const key = s.student_code || s.full_name;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((s) => ({
+        student_id: s.id,
+        student_code: s.student_code,
+        student_name: s.full_name,
+        status: 'NOT_YET' as AttendanceStatus,
+        note: '',
+      }));
     setRecords(freshRecords);
     setIsLocked(false);
     setIsLoading(false);

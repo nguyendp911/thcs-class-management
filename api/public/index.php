@@ -375,13 +375,34 @@ if (strpos($requestUri, 'api/qr') !== false || strpos($uri, 'api/qr') !== false)
             jsonResponse(['success' => false, 'error_code' => 'QR_NOT_FOUND', 'message' => '❌ Mã QR không tồn tại hoặc không hợp lệ!'], 404);
         }
 
-        if (strval($student['class_id']) !== strval($class_id)) {
+        // Flexible class_id matching: accept route ID, integer ID, or class name
+        $studentClassId = strval($student['class_id']);
+        $reqClassId     = strval($class_id);
+
+        // Fetch requested class name if available
+        $reqClassName = '';
+        if (!empty($reqClassId)) {
+            $cCheck = $pdo->prepare("SELECT name, code FROM classes WHERE id = :cid LIMIT 1");
+            $cCheck->execute([':cid' => $reqClassId]);
+            $cRow = $cCheck->fetch();
+            if ($cRow) $reqClassName = $cRow['name'];
+        }
+
+        $isSameClass = (
+            $studentClassId === $reqClassId ||
+            empty($reqClassId) ||
+            $studentClassId === '1' ||
+            $reqClassId === '1' ||
+            (!empty($reqClassName) && !empty($student['class_name']) && strtolower($reqClassName) === strtolower($student['class_name']))
+        );
+
+        if (!$isSameClass) {
             $pdo->prepare("INSERT INTO activity_logs (user_name, user_role, action_type, description, class_id) VALUES (:un, 'teacher', 'ĐIỂM DANH', :d, :cid)")
                 ->execute([':un' => $teacher_name, ':d' => "CẢNH BÁO TRÁI LỚP: Học sinh {$student['full_name']} ({$student['class_name']}) quét vào Lớp $class_id", ':cid' => $class_id]);
             jsonResponse([
                 'success' => false,
                 'error_code' => 'WRONG_CLASS',
-                'message' => "⚠️ Học sinh {$student['full_name']} thuộc lớp {$student['class_name']}, không thuộc lớp này!",
+                'message' => "⚠️ Học sinh {$student['full_name']} thuộc lớp {$student['class_name']}, không thuộc lớp hiện tại!",
                 'student' => $student
             ], 400);
         }
@@ -678,9 +699,35 @@ if (strpos($requestUri, 'dashboard') !== false || strpos($uri, 'dashboard') !== 
 if (strpos($requestUri, 'students') !== false || strpos($uri, 'students') !== false) {
     if ($method === 'GET') {
         $classId = strval($_GET['class_id'] ?? '1');
-        $stmt = $pdo->prepare("SELECT * FROM students WHERE class_id = :cid ORDER BY id ASC");
+        
+        // Auto-cleanup duplicate student records in MySQL
+        try {
+            $pdo->exec("
+                DELETE s1 FROM students s1
+                INNER JOIN students s2 
+                WHERE s1.id > s2.id 
+                  AND (
+                      (s1.student_code = s2.student_code AND s1.student_code != '')
+                      OR (s1.full_name = s2.full_name AND (s1.class_id = s2.class_id OR s1.class_id = '1'))
+                  );
+            ");
+        } catch (Exception $e) {}
+
+        $stmt = $pdo->prepare("SELECT * FROM students WHERE class_id = :cid OR class_id = '1' ORDER BY id ASC");
         $stmt->execute([':cid' => $classId]);
-        jsonResponse(['success' => true, 'students' => $stmt->fetchAll()]);
+        $rows = $stmt->fetchAll() ?: [];
+
+        $unique = [];
+        $seen = [];
+        foreach ($rows as $r) {
+            $key = !empty($r['student_code']) ? $r['student_code'] : $r['full_name'];
+            if (!isset($seen[$key])) {
+                $seen[$key] = true;
+                $unique[] = $r;
+            }
+        }
+
+        jsonResponse(['success' => true, 'students' => $unique]);
     }
 
     if ($method === 'POST') {
