@@ -1,0 +1,26 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /thcs/
+
+    # Rewrite uploads directory to api/public/uploads/
+    RewriteRule ^uploads/(.*)$ /thcs/api/public/uploads/$1 [QSA,L]
+
+    # Direct API requests to backend
+    RewriteRule ^api/(.*)$ /thcs/api/public/index.php [QSA,L]
+
+    # Allow existing physical files and directories to be served directly
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Rewrite all other routes to index.html for SPA React Router
+    RewriteRule . /thcs/index.html [L]
+</IfModule>
+
+<IfModule mod_headers.c>
+    <FilesMatch "\.(html|htm)$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "0"
+    </FilesMatch>
+</IfModule>

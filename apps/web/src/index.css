@@ -1,0 +1,301 @@
+@import "tailwindcss";
+
+:root {
+  --color-background: #F7F8FF;
+  --color-surface: #FFFFFF;
+  --color-surface-soft: #FAFBFF;
+  --color-primary: #6C63FF;
+  --color-primary-light: #A8A4FF;
+  --color-primary-dark: #5148E5;
+  --color-success: #22C997;
+  --color-danger: #FF5D68;
+  --color-warning: #F6B73C;
+  --color-text: #18243A;
+  --color-text-muted: #68758D;
+  --color-border: #E1E6F0;
+  
+  --shadow-clay-card: 0 16px 36px rgba(108, 99, 255, .07), 0 4px 12px rgba(24, 36, 58, .03), inset 0 1px 1px rgba(255, 255, 255, .95);
+  --shadow-clay-card-hover: 0 24px 52px rgba(108, 99, 255, .14), 0 8px 20px rgba(24, 36, 58, .05), inset 0 1px 1px rgba(255, 255, 255, 1);
+  --shadow-btn-primary: 0 8px 22px rgba(108, 99, 255, .32), inset 0 1px 1px rgba(255, 255, 255, .6), inset 0 -2px 4px rgba(0, 0, 0, .12);
+  --shadow-btn-success: 0 8px 22px rgba(34, 201, 151, .32), inset 0 1px 1px rgba(255, 255, 255, .6), inset 0 -2px 4px rgba(0, 0, 0, .12);
+  --shadow-btn-danger: 0 8px 22px rgba(255, 93, 104, .32), inset 0 1px 1px rgba(255, 255, 255, .6), inset 0 -2px 4px rgba(0, 0, 0, .12);
+
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 28px;
+}
+
+@theme {
+  --color-brand-50: #f7f8ff;
+  --color-brand-100: #eeecff;
+  --color-brand-200: #e2dfff;
+  --color-brand-300: #a8a4ff;
+  --color-brand-400: #8178ff;
+  --color-brand-500: #6c63ff;
+  --color-brand-600: #5148e5;
+  --color-brand-700: #3f36c7;
+  --color-brand-800: #2f279c;
+  --color-brand-900: #18243a;
+
+  --color-mint-50: #e6f9f3;
+  --color-mint-100: #d1f4ea;
+  --color-mint-200: #a3f0d9;
+  --color-mint-300: #52e3b9;
+  --color-mint-400: #34d3a3;
+  --color-mint-500: #22c997;
+  --color-mint-600: #0e8360;
+
+  --color-navy: #18243a;
+  --color-navy-dark: #10192d;
+}
+
+html {
+  font-size: 17.5px;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-background);
+    background-image: 
+      radial-gradient(circle at 12% 18%, rgba(168, 164, 255, 0.18) 0%, transparent 40%),
+      radial-gradient(circle at 88% 12%, rgba(34, 201, 151, 0.14) 0%, transparent 35%),
+      radial-gradient(circle at 50% 85%, rgba(255, 93, 104, 0.08) 0%, transparent 45%);
+    background-attachment: fixed;
+    color: var(--color-text);
+    font-family: "Inter", "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* Global Readability Overrides Matching User Screenshot Scale */
+table {
+  font-size: 14.5px;
+}
+
+th {
+  font-size: 14px;
+}
+
+/* ===== RESPONSIVE TABLES: Force horizontal scroll instead of column compression ===== */
+/* All tables inside overflow-x-auto containers will scroll, not compress */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(108, 99, 255, 0.3) transparent;
+}
+
+.overflow-x-auto table {
+  min-width: max-content;
+}
+
+thead th {
+  white-space: nowrap;
+}
+
+/* ===== MOBILE LAYOUT: Extra bottom padding to clear the mobile nav bar (h-14 = 56px) ===== */
+@media (max-width: 1023px) {
+  main {
+    padding-bottom: 5rem !important;
+  }
+}
+
+/* ===== GLOBAL OVERFLOW SAFETY: Prevent page-level horizontal overflow ===== */
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+/* ===== CARD RESPONSIVE: Clay cards should never overflow their parent container ===== */
+.clay-card, .clay-card-panel {
+  min-width: 0;
+}
+
+
+input, select, textarea {
+  font-size: 14.5px;
+}
+
+/* ===== RESPONSIVE SCALING: Reduce font-size slightly on mid-size screens ===== */
+@media (min-width: 640px) and (max-width: 1279px) {
+  html {
+    font-size: 15px;
+  }
+
+  table {
+    font-size: 13px;
+  }
+
+  th {
+    font-size: 12px;
+  }
+
+  input, select, textarea {
+    font-size: 13px !important;
+  }
+}
+
+/* Ensure tables don't overflow on desktop with sidebar */
+@media (min-width: 1024px) {
+  .overflow-x-auto {
+    max-width: calc(100vw - 280px);
+  }
+}
+
+/* No overflow for content area itself */
+main {
+  overflow-x: hidden;
+}
+
+/* Animation Keyframes for Vibrant Dynamic User Experience */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes floatSlow {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(108, 99, 255, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(108, 99, 255, 0);
+  }
+}
+
+@keyframes bounceSoft {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+/* Global Animation Utility Classes */
+.animate-fade-in {
+  animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-float {
+  animation: floatSlow 3.5s ease-in-out infinite;
+}
+
+.animate-bounce-soft {
+  animation: bounceSoft 2s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2.5s infinite;
+}
+
+.clay-card, .clay-card-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  box-shadow: var(--shadow-clay-card);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: fadeInUp 0.45s ease-out forwards;
+}
+
+.clay-card:hover, .clay-card-panel:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-clay-card-hover);
+}
+
+.clay-card-purple {
+  background: linear-gradient(135deg, #eeecff 0%, #e2dfff 100%);
+  border: 1px solid #c0bbfd;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 20px rgba(108, 99, 255, 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.9);
+}
+
+.clay-card-mint {
+  background: linear-gradient(135deg, #e6f9f3 0%, #d1f4ea 100%);
+  border: 1px solid #a3f0d9;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 20px rgba(34, 201, 151, 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.9);
+}
+
+button {
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+button:active {
+  transform: scale(0.96) !important;
+}
+
+.clay-button-purple, .btn-primary {
+  background: linear-gradient(135deg, var(--color-primary) 0%, #8178FF 100%);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: var(--shadow-btn-primary);
+  font-weight: 700;
+  border-radius: 9999px;
+  transition: all .2s cubic-bezier(.34,1.56,.64,1);
+}
+
+.clay-button-purple:hover, .btn-primary:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 12px 28px rgba(108, 99, 255, 0.45);
+}
+
+.clay-button-mint, .btn-success {
+  background: linear-gradient(135deg, var(--color-success) 0%, #34D3A3 100%);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: var(--shadow-btn-success);
+  font-weight: 700;
+  border-radius: 9999px;
+  transition: all .2s cubic-bezier(.34,1.56,.64,1);
+}
+
+.clay-button-mint:hover, .btn-success:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 12px 28px rgba(34, 201, 151, 0.45);
+}
+
+.table-sticky-column {
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  background-color: white;
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(108, 99, 255, 0.3);
+  border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(108, 99, 255, 0.6);
+}

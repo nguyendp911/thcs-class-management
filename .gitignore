@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+vendor/
+.pnp
+.pnp.js
+
+# Testing & Logs
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment & Secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE & System
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.zip
+*.tar.gz
+
+# Python
+__pycache__/
+*.pyc
+
+# Build outputs (optional, keep source only)
+apps/web/dist/
+dist/

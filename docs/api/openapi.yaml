@@ -1,0 +1,116 @@
+openapi: 3.0.3
+info:
+  title: Website Quản lý Lớp THCS REST API
+  description: API phục vụ nền tảng số dành cho giáo viên chủ nhiệm, bộ môn, phụ huynh và học sinh THCS.
+  version: 1.0.0
+servers:
+  - url: /api/v1
+    description: Production API Server v1
+
+paths:
+  /auth/login:
+    post:
+      summary: Đăng nhập tài khoản
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Đăng nhập thành công
+        '401':
+          description: Sai thông tin đăng nhập
+        '429':
+          description: Vượt quá số lần cho phép
+
+  /auth/logout:
+    post:
+      summary: Đăng xuất và thu hồi phiên
+      responses:
+        '200':
+          description: Đăng xuất thành công
+
+  /me:
+    get:
+      summary: Lấy thông tin người dùng hiện tại và phạm vi
+      responses:
+        '200':
+          description: Thông tin user, vai trò, quyền và các lớp được truy cập
+
+  /classes/{id}/students:
+    get:
+      summary: Danh sách học sinh theo lớp
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Danh sách học sinh có phân trang và bộ lọc
+
+  /classes/{id}/attendance-sessions:
+    get:
+      summary: Danh sách phiên điểm danh của lớp
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+    post:
+      summary: Tạo mới phiên điểm danh
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '201':
+          description: Phiên điểm danh được tạo
+        '409':
+          description: Buổi điểm danh trùng lặp
+
+  /classes/{id}/gradebook:
+    get:
+      summary: Ma trận điểm học sinh theo lớp và môn
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Sổ điểm chi tiết
+
+  /reports:
+    post:
+      summary: Khởi tạo tác vụ xuất báo cáo Excel/PDF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [report_type, format]
+              properties:
+                report_type:
+                  type: string
+                format:
+                  type: string
+                  enum: [excel, pdf]
+      responses:
+        '202':
+          description: Tác vụ đã được đưa vào hàng chờ
