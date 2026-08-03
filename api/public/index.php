@@ -347,10 +347,15 @@ if (strpos($requestUri, 'api/qr') !== false || strpos($uri, 'api/qr') !== false)
 
         $stmt = $pdo->prepare("
             SELECT q.qr_token, q.version, q.is_revoked, s.id as student_id, s.student_code, s.full_name, s.gender, s.class_id, s.avatar_url, c.name as class_name
-            FROM student_qr_tokens q
-            JOIN students s ON q.student_id = s.id
+            FROM students s
+            LEFT JOIN student_qr_tokens q ON s.id = q.student_id AND q.is_revoked = 0
             LEFT JOIN classes c ON s.class_id = c.id
-            WHERE (q.qr_token = :tk OR s.student_code = :tk) AND q.is_revoked = 0
+            WHERE q.qr_token = :tk 
+               OR s.student_code = :tk 
+               OR s.id = :tk 
+               OR s.public_id = :tk
+               OR CONCAT('THCS-QR-v1-', s.student_code) = :tk
+               OR CONCAT('THCS-QR-v1-', s.id) = :tk
             LIMIT 1
         ");
         $stmt->execute([':tk' => $qr_token]);

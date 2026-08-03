@@ -11,6 +11,7 @@ interface StudentIDCardModalProps {
   onClose: () => void;
   student: Student | null;
   allStudents?: Student[];
+  classId?: string | number;
   className?: string;
   teacherName?: string;
   onTokenUpdated?: () => void;
@@ -21,6 +22,7 @@ export const StudentIDCardModal: React.FC<StudentIDCardModalProps> = ({
   onClose,
   student,
   allStudents = [],
+  classId = 1,
   className = '8A3',
   teacherName = 'Giáo viên',
   onTokenUpdated,
@@ -42,6 +44,8 @@ export const StudentIDCardModal: React.FC<StudentIDCardModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
+    const targetClassId = student?.class_id || classId || 1;
+
     if (viewMode === 'single' && student) {
       setIsLoadingToken(true);
       fetch(`/thcs/api/qr/token?student_id=${student.id}`)
@@ -61,25 +65,31 @@ export const StudentIDCardModal: React.FC<StudentIDCardModalProps> = ({
         .finally(() => setIsLoadingToken(false));
     } else if (viewMode === 'bulk' && allStudents.length > 0) {
       setIsLoadingToken(true);
-      fetch(`/thcs/api/qr/token?class_id=${student?.class_id || 1}`)
+      // Pre-fill all QR data URLs locally immediately so it never shows a blank box
+      const initialMap: Record<string, { token: string; dataUrl: string }> = {};
+      for (const s of allStudents) {
+        const tok = `THCS-QR-v1-${s.student_code || s.id}`;
+        initialMap[String(s.id)] = { token: tok, dataUrl: getQRImageUrl(tok) };
+        if (s.student_code) initialMap[String(s.student_code)] = { token: tok, dataUrl: getQRImageUrl(tok) };
+      }
+      setBulkQrData(initialMap);
+
+      fetch(`/thcs/api/qr/token?class_id=${targetClassId}`)
         .then(res => res.json())
         .then(async data => {
-          const map: Record<string, { token: string; dataUrl: string }> = {};
           if (data.success && Array.isArray(data.tokens)) {
+            const map = { ...initialMap };
             for (const t of data.tokens) {
-              map[String(t.student_id)] = { token: t.qr_token, dataUrl: getQRImageUrl(t.qr_token) };
+              const url = getQRImageUrl(t.qr_token);
+              map[String(t.student_id)] = { token: t.qr_token, dataUrl: url };
+              if (t.student_code) map[String(t.student_code)] = { token: t.qr_token, dataUrl: url };
             }
-          } else {
-            for (const s of allStudents) {
-              const tok = `THCS-QR-v1-${s.student_code || s.id}`;
-              map[String(s.id)] = { token: tok, dataUrl: getQRImageUrl(tok) };
-            }
+            setBulkQrData(map);
           }
-          setBulkQrData(map);
         })
         .finally(() => setIsLoadingToken(false));
     }
-  }, [isOpen, student?.id, viewMode, allStudents.length]);
+  }, [isOpen, student?.id, viewMode, allStudents.length, classId]);
 
   const handleRevokeToken = async () => {
     if (!student) return;
@@ -247,7 +257,9 @@ export const StudentIDCardModal: React.FC<StudentIDCardModalProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto p-1">
               {allStudents.map(st => {
-                const qrInfo = bulkQrData[String(st.id)];
+                const qrInfo = bulkQrData[String(st.id)] || bulkQrData[String(st.student_code)];
+                const dataUrl = qrInfo?.dataUrl || getQRImageUrl(st.student_code || `THCS-QR-v1-${st.id}`);
+
                 return (
                   <div key={st.id} className="p-3 rounded-2xl border border-[#E1E6F0] bg-white shadow-2xs flex items-center gap-3">
                     {st.avatar_url ? (
@@ -260,11 +272,7 @@ export const StudentIDCardModal: React.FC<StudentIDCardModalProps> = ({
                       <div className="text-[10px] text-[#68758D] font-mono">Mã: {st.student_code || st.id}</div>
                       <div className="text-[10px] text-[#6C63FF] font-bold">Lớp {className}</div>
                     </div>
-                    {qrInfo?.dataUrl ? (
-                      <img src={qrInfo.dataUrl} alt="QR" className="w-14 h-14 object-contain border rounded-lg p-0.5 shrink-0" />
-                    ) : (
-                      <div className="w-14 h-14 bg-gray-100 rounded-lg animate-pulse"></div>
-                    )}
+                    <img src={dataUrl} alt="QR" className="w-14 h-14 object-contain border border-[#E1E6F0] rounded-lg p-0.5 shrink-0 bg-white shadow-2xs" />
                   </div>
                 );
               })}
