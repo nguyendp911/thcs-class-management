@@ -17,7 +17,8 @@ export const StudentsPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlSearchTerm = searchParams.get('search') || '';
 
-  const { selectedClass, classesList, studentsList: students, setStudentsList: saveStudentsList } = useAuth();
+  const { selectedClass, classesList, permittedClasses, studentsList: students, setStudentsList: saveStudentsList } = useAuth();
+  const displayClasses = (permittedClasses && permittedClasses.length > 0) ? permittedClasses : classesList;
   const [searchTerm, setSearchTerm] = useState(urlSearchTerm);
 
   useEffect(() => {
@@ -917,8 +918,8 @@ export const StudentsPage: React.FC = () => {
               onChange={(e) => setNewClassId(e.target.value)}
               className="mt-1 w-full rounded-xl border border-[#C0BBFD] bg-[#EEECFF] p-2.5 text-xs font-extrabold text-[#6C63FF] focus:outline-none cursor-pointer"
             >
-              {classesList && classesList.length > 0 ? (
-                classesList.map((cls: any) => (
+              {displayClasses && displayClasses.length > 0 ? (
+                displayClasses.map((cls: any) => (
                   <option key={cls.id} value={cls.id}>
                     {cls.name} ({cls.grade_level} - Phòng {cls.room})
                   </option>

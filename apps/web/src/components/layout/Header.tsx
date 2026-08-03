@@ -11,10 +11,12 @@ export const Header: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const {
-    currentUser, currentRole, selectedSchoolYear, setSelectedSchoolYear,
-    selectedSemester, setSelectedSemester, selectedClass, setSelectedClass, classesList, studentsList, logout,
+    currentUser, currentRole, isSuperAdmin, selectedSchoolYear, setSelectedSchoolYear,
+    selectedSemester, setSelectedSemester, selectedClass, setSelectedClass, classesList, permittedClasses, studentsList, logout,
     updateUserPassword, getUserPassword
   } = useAuth();
+
+  const displayClasses = (permittedClasses && permittedClasses.length > 0) ? permittedClasses : classesList;
 
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -207,11 +209,52 @@ export const Header: React.FC = () => {
           )}
           {/* Mobile Compact Class Selector */}
           <div className="flex md:hidden items-center shrink-0">
+            {!isSuperAdmin && displayClasses.length <= 1 ? (
+              <div className="rounded-xl border border-[#C0BBFD] bg-[#EEECFF] px-2 py-1.5 text-xs font-black text-[#6C63FF] flex items-center gap-1 shrink-0" title="Tài khoản của bạn được phân công xem lớp này">
+                <i className="fa-solid fa-lock text-[10px]"></i>
+                <span className="max-w-[75px] truncate">{selectedClass?.name || 'Lớp của bạn'}</span>
+              </div>
+            ) : (
+              <select
+                value={selectedClass?.id || 0}
+                onChange={(e) => {
+                  const targetId = String(e.target.value);
+                  const cls = displayClasses.find((c: any) => String(c.id) === targetId);
+                  if (cls) {
+                    setSelectedClass(cls);
+                    const newPath = location.pathname.replace(/\/app\/classes\/[^\/]+/, `/app/classes/${cls.id}`);
+                    if (newPath !== location.pathname) {
+                      navigate(newPath);
+                    }
+                  }
+                }}
+                className="rounded-xl border border-[#C0BBFD] bg-[#EEECFF] px-2 py-1.5 text-xs font-black text-[#6C63FF] focus:outline-none cursor-pointer max-w-[95px] truncate"
+              >
+                {displayClasses.length === 0 ? (
+                  <option value={0}>Chưa có lớp</option>
+                ) : (
+                  displayClasses.map((c: any) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))
+                )}
+              </select>
+            )}
+          </div>
+        </div>
+
+        {/* Scope Context Dropdowns (Desktop) */}
+        <div className="hidden md:flex items-center gap-1.5 shrink-0 border-l border-[#E1E6F0] pl-2.5">
+          {!isSuperAdmin && displayClasses.length <= 1 ? (
+            <div className="rounded-xl border border-[#C0BBFD] bg-[#EEECFF] px-3 py-1.5 text-xs font-black text-[#6C63FF] flex items-center gap-1.5 shrink-0" title="Tài khoản của bạn được phân công lớp này">
+              <i className="fa-solid fa-lock text-xs text-[#6C63FF]"></i>
+              <span>{selectedClass?.name || 'Lớp phân công'}</span>
+            </div>
+          ) : (
             <select
               value={selectedClass?.id || 0}
               onChange={(e) => {
                 const targetId = String(e.target.value);
-                const cls = classesList.find((c: any) => String(c.id) === targetId);
+                const cls = displayClasses.find((c: any) => String(c.id) === targetId);
                 if (cls) {
                   setSelectedClass(cls);
                   const newPath = location.pathname.replace(/\/app\/classes\/[^\/]+/, `/app/classes/${cls.id}`);
@@ -220,44 +263,17 @@ export const Header: React.FC = () => {
                   }
                 }
               }}
-              className="rounded-xl border border-[#C0BBFD] bg-[#EEECFF] px-2 py-1.5 text-xs font-black text-[#6C63FF] focus:outline-none cursor-pointer max-w-[95px] truncate"
+              className="rounded-xl border border-[#E1E6F0] bg-[#FAFBFF] px-2.5 py-1.5 text-xs font-extrabold text-[#18243A] focus:border-[#6C63FF] focus:outline-none cursor-pointer"
             >
-              {classesList.length === 0 ? (
-                <option value={0}>Chưa có lớp</option>
-              ) : (
-                classesList.map((c: any) => (
+              {displayClasses.length > 0 ? (
+                displayClasses.map((c: any) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))
+              ) : (
+                <option value="0">Chưa có lớp học nào</option>
               )}
             </select>
-          </div>
-        </div>
-
-        {/* Scope Context Dropdowns (Desktop) */}
-        <div className="hidden md:flex items-center gap-1.5 shrink-0 border-l border-[#E1E6F0] pl-2.5">
-          <select
-            value={selectedClass?.id || 0}
-            onChange={(e) => {
-              const targetId = String(e.target.value);
-              const cls = classesList.find((c: any) => String(c.id) === targetId);
-              if (cls) {
-                setSelectedClass(cls);
-                const newPath = location.pathname.replace(/\/app\/classes\/[^\/]+/, `/app/classes/${cls.id}`);
-                if (newPath !== location.pathname) {
-                  navigate(newPath);
-                }
-              }
-            }}
-            className="rounded-xl border border-[#E1E6F0] bg-[#FAFBFF] px-2.5 py-1.5 text-xs font-extrabold text-[#18243A] focus:border-[#6C63FF] focus:outline-none cursor-pointer"
-          >
-            {classesList.length > 0 ? (
-              classesList.map((c: any) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))
-            ) : (
-              <option value="0">Chưa có lớp học nào</option>
-            )}
-          </select>
+          )}
 
           <select
             value={selectedSchoolYear?.id || 1}

@@ -14,6 +14,9 @@ export interface User {
   avatar_url?: string;
   status: 'active' | 'inactive';
   must_change_password?: boolean;
+  class_id?: number;
+  class_ids?: number[];
+  class_name?: string;
   activation_request?: {
     target_role: RoleType;
     status: 'pending' | 'approved' | 'rejected';

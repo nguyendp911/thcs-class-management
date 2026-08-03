@@ -7,6 +7,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   currentUser: User;
   currentRole: RoleType;
+  isSuperAdmin: boolean;
   loginAsUser: (user: User, role: RoleType) => void;
   switchUserRole: (role: RoleType) => void;
   selectedSchoolYear: SchoolYear;
@@ -14,6 +15,7 @@ interface AuthContextType {
   selectedSemester: Semester;
   setSelectedSemester: (sem: Semester) => void;
   classesList: ClassItem[];
+  permittedClasses: ClassItem[];
   selectedClass: ClassItem;
   setSelectedClass: (cls: ClassItem) => void;
   updateClass: (cls: ClassItem) => void;
@@ -93,6 +95,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   }, []);
 
+  // Check if current logged-in user is SuperAdmin or System Admin
+  const isSuperAdmin = currentRole === 'superadmin' || currentRole === 'admin';
+
+  // Compute permitted classes for the current user (SuperAdmin sees ALL classes, others see ONLY assigned class(es))
+  const permittedClasses = React.useMemo(() => {
+    if (isSuperAdmin) {
+      return classesList;
+    }
+
+    if (!classesList || classesList.length === 0) return [];
+
+    const norm = (s?: string) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().trim();
+
+    const matched = classesList.filter(c => {
+      // 1. Explicit class_id or class_ids on user profile
+      if (currentUser?.class_id && String(c.id) === String(currentUser.class_id)) return true;
+      if (currentUser?.class_ids && Array.isArray(currentUser.class_ids) && currentUser.class_ids.some(id => String(id) === String(c.id))) return true;
+
+      // 2. Homeroom teacher match by ID or Name
+      if (c.homeroom_teacher_id && currentUser?.id && String(c.homeroom_teacher_id) === String(currentUser.id)) return true;
+      if (c.homeroom_teacher_name && currentUser?.name && norm(c.homeroom_teacher_name).includes(norm(currentUser.name))) return true;
+
+      // 3. Class name match
+      if (currentUser?.class_name && norm(c.name) === norm(currentUser.class_name)) return true;
+
+      return false;
+    });
+
+    // If user has no specific match assigned yet, default to first class or keep isolated
+    return matched.length > 0 ? matched : [classesList[0]];
+  }, [classesList, currentUser, currentRole, isSuperAdmin]);
+
   // Keep mockClasses array in sync with classesList & restore last selected class
   useEffect(() => {
     mockClasses.length = 0;
@@ -101,15 +135,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (classesList.length > 0) {
       const savedClassId = localStorage.getItem('thcs_selected_class_id');
       const found = classesList.find(c => String(c.id) === String(savedClassId));
-      if (found) {
+      if (found && (isSuperAdmin || permittedClasses.some(p => String(p.id) === String(found.id)))) {
         setSelectedClassState(found);
-      } else if (!selectedClass || !classesList.some(c => String(c.id) === String(selectedClass.id))) {
+      } else if (permittedClasses.length > 0) {
+        setSelectedClassState(permittedClasses[0]);
+      } else {
         setSelectedClassState(classesList[0]);
       }
     } else {
       setSelectedClassState(EMPTY_CLASS);
     }
-  }, [classesList]);
+  }, [classesList, permittedClasses, isSuperAdmin]);
+
+  // Automatically enforce selectedClass restriction when role or permittedClasses change
+  useEffect(() => {
+    if (!isSuperAdmin && permittedClasses.length > 0) {
+      const isSelectedPermitted = permittedClasses.some(c => String(c.id) === String(selectedClass?.id));
+      if (!isSelectedPermitted) {
+        setSelectedClassState(permittedClasses[0]);
+        try {
+          localStorage.setItem('thcs_selected_class_id', String(permittedClasses[0].id));
+        } catch (e) {}
+      }
+    }
+  }, [permittedClasses, isSuperAdmin, selectedClass?.id]);
 
   // Load students automatically per selected class with LocalStorage fallback + MySQL API fetch
   useEffect(() => {
@@ -296,6 +345,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isAuthenticated,
       currentUser,
       currentRole,
+      isSuperAdmin,
       loginAsUser,
       switchUserRole,
       selectedSchoolYear,
@@ -303,6 +353,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       selectedSemester,
       setSelectedSemester,
       classesList,
+      permittedClasses,
       selectedClass,
       setSelectedClass,
       updateClass,
