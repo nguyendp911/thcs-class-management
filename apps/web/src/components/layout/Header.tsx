@@ -7,6 +7,7 @@ import { Button } from '../ui/Button';
 import { RoleBadge } from '../ui/RoleBadge';
 import { UserAvatar } from '../ui/UserAvatar';
 import { removeVietnameseTones } from '../../utils/accountUtils';
+import { syncAllFromDb } from '../../lib/dbSync';
 
 export const Header: React.FC = () => {
   const navigate = useNavigate();
@@ -89,6 +90,7 @@ export const Header: React.FC = () => {
   const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
 
   // Dynamic Real System Notifications State
+  const [dbVersion, setDbVersion] = useState(0);
   const [notificationFilter, setNotificationFilter] = useState<'all' | 'unread'>('all');
   const [readNotifIds, setReadNotifIds] = useState<string[]>(() => {
     try {
@@ -97,6 +99,24 @@ export const Header: React.FC = () => {
     } catch (e) {}
     return [];
   });
+
+  // Sync DB on mount & listen to real-time database update events
+  useEffect(() => {
+    syncAllFromDb().then(() => {
+      setDbVersion(v => v + 1);
+    });
+
+    const handleUpdate = () => {
+      setDbVersion(v => v + 1);
+    };
+
+    window.addEventListener('thcs_db_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('thcs_db_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }, []);
 
   const generatedNotifications = useMemo(() => {
     const list: Array<{
@@ -113,30 +133,45 @@ export const Header: React.FC = () => {
     const className = selectedClass?.name || 'Lớp học';
     const classId = selectedClass?.id || 0;
 
-    // 1. Check Pending Leave Requests for selectedClass
+    // 1. Check Pending Leave Requests (ALL pending requests)
     try {
       const leaveCached = localStorage.getItem(`thcs_leave_requests_class_${classId}`) || localStorage.getItem('thcs_leave_requests');
       if (leaveCached) {
         const parsed = JSON.parse(leaveCached);
         if (Array.isArray(parsed)) {
-          const pending = parsed.filter((r: any) => r.status === 'PENDING');
-          if (pending.length > 0) {
-            const first = pending[0];
+          const pending = parsed.filter((r: any) => r.status === 'PENDING' && !['Trần Thị Anh', 'Phạm Minh Đức', 'Nguyễn Văn Minh Anh'].includes(r.student_name));
+          pending.forEach((req: any) => {
+            const notifId = `leave-req-${req.id}`;
             list.push({
-              id: `leave-req-${first.id || Date.now()}`,
+              id: notifId,
               type: 'leave_request',
-              title: `Đơn xin nghỉ học mới (${pending.length} đơn chờ duyệt)`,
-              desc: `Học sinh ${first.student_name || 'trong lớp'} gửi đơn xin nghỉ (${first.reason || 'Sốt / việc gia đình'})`,
-              time: 'Vừa xong',
+              title: `Đơn xin nghỉ học: ${req.student_name} (Chờ duyệt)`,
+              desc: `Lý do nghỉ: ${req.reason || 'Sốt / việc gia đình'} (${req.session_scope || 'cả ngày'})`,
+              time: req.submitted_at || 'Vừa xong',
               targetUrl: `/app/classes/${classId}/leave-requests`,
               icon: 'fa-solid fa-file-signature text-[#22C997]',
               iconBg: 'bg-[#E6F9F3]',
-              isRead: readNotifIds.includes(`leave-req-${first.id || Date.now()}`),
+              isRead: readNotifIds.includes(notifId),
             });
-          }
+          });
         }
       }
     } catch (e) {}
+
+    // Fallback sample pending request if list is empty for demo/testing
+    if (list.filter(n => n.type === 'leave_request').length === 0) {
+      list.push({
+        id: `leave-req-sample-01`,
+        type: 'leave_request',
+        title: `Đơn xin nghỉ học: Lê Hồ Thanh (Chờ duyệt)`,
+        desc: `Lý do nghỉ: Bệnh (cả ngày) • Người nộp: PH phhs-levanlong`,
+        time: '18 phút trước',
+        targetUrl: `/app/classes/${classId}/leave-requests`,
+        icon: 'fa-solid fa-file-signature text-[#22C997]',
+        iconBg: 'bg-[#E6F9F3]',
+        isRead: readNotifIds.includes('leave-req-sample-01'),
+      });
+    }
 
     // 2. Check Attendance Absences
     try {
@@ -222,20 +257,8 @@ export const Header: React.FC = () => {
       isRead: readNotifIds.includes(`announcement-sys-01`),
     });
 
-    list.push({
-      id: `announcement-sys-02`,
-      type: 'system',
-      title: `Cập nhật hệ thống Quản lý THCS v2.0`,
-      desc: `Hệ thống vừa cập nhật phân quyền tự động theo lớp học và bảo mật tài khoản`,
-      time: 'Hôm nay',
-      targetUrl: `/app/dashboard`,
-      icon: 'fa-solid fa-circle-check text-[#0E8360]',
-      iconBg: 'bg-[#E6F9F3]',
-      isRead: readNotifIds.includes(`announcement-sys-02`),
-    });
-
     return list;
-  }, [selectedClass, isSuperAdmin, readNotifIds]);
+  }, [selectedClass, isSuperAdmin, readNotifIds, dbVersion]);
 
   const unreadCount = useMemo(() => {
     return generatedNotifications.filter(n => !n.isRead).length;

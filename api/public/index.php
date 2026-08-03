@@ -45,6 +45,21 @@ try {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
 
+    $pdo->exec("CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        public_id VARCHAR(50) NOT NULL,
+        name VARCHAR(100) NOT NULL,
+        username VARCHAR(100) UNIQUE NOT NULL,
+        email VARCHAR(100) NULL,
+        phone VARCHAR(50) NULL,
+        password VARCHAR(255) NULL,
+        role VARCHAR(50) NOT NULL DEFAULT 'homeroom_teacher',
+        status VARCHAR(30) NOT NULL DEFAULT 'active',
+        avatar_url LONGTEXT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
     $pdo->exec("CREATE TABLE IF NOT EXISTS students (
         id INT AUTO_INCREMENT PRIMARY KEY,
         public_id VARCHAR(50) NOT NULL,
@@ -59,6 +74,7 @@ try {
         group_name VARCHAR(50) NULL,
         primary_guardian_name VARCHAR(100) NULL,
         primary_guardian_phone VARCHAR(50) NULL,
+        avatar_url LONGTEXT NULL,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
 
@@ -68,13 +84,89 @@ try {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
 
+    $pdo->exec("CREATE TABLE IF NOT EXISTS system_settings (
+        setting_key VARCHAR(100) PRIMARY KEY,
+        setting_value TEXT NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS attendance_sessions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        class_id VARCHAR(100) NOT NULL,
+        session_date DATE NOT NULL,
+        session_type VARCHAR(20) NOT NULL DEFAULT 'morning',
+        is_locked TINYINT(1) NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_session (class_id, session_date, session_type)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS attendance_records (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        session_id INT NOT NULL,
+        student_id INT NOT NULL,
+        student_name VARCHAR(100) NOT NULL,
+        status VARCHAR(30) NOT NULL DEFAULT 'PRESENT',
+        minutes_late INT NULL,
+        note TEXT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_record (session_id, student_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS class_posts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        class_id VARCHAR(100) NOT NULL DEFAULT '1',
+        author_name VARCHAR(100) NOT NULL,
+        author_role VARCHAR(100) NOT NULL DEFAULT 'GVCN',
+        author_avatar TEXT NULL,
+        category VARCHAR(100) NOT NULL DEFAULT 'Thông báo',
+        content TEXT NULL,
+        image_url TEXT NULL,
+        image_urls LONGTEXT NULL,
+        likes_count INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS post_comments (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        post_id INT NOT NULL,
+        author_name VARCHAR(100) NOT NULL,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS timetable_entries (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        class_id VARCHAR(100) NOT NULL,
+        day_of_week VARCHAR(20) NOT NULL,
+        period INT NOT NULL,
+        subject VARCHAR(100) NOT NULL,
+        teacher_name VARCHAR(100) NULL,
+        room VARCHAR(50) NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS lesson_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        class_id VARCHAR(100) NOT NULL,
+        session_date DATE NOT NULL,
+        subject VARCHAR(100) NOT NULL,
+        teacher_name VARCHAR(100) NULL,
+        lesson_content TEXT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
     try { $pdo->exec("ALTER TABLE classes MODIFY id VARCHAR(100) NOT NULL;"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE students MODIFY class_id VARCHAR(100) NOT NULL;"); } catch (Exception $e) {}
-    try { $pdo->exec("ALTER TABLE attendance_sessions MODIFY class_id VARCHAR(100) NOT NULL;"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE students ADD COLUMN avatar_url LONGTEXT NULL;"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE students MODIFY COLUMN avatar_url LONGTEXT NULL;"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE users ADD COLUMN avatar_url LONGTEXT NULL;"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE users MODIFY COLUMN avatar_url LONGTEXT NULL;"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE class_posts ADD COLUMN image_urls LONGTEXT NULL;"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE class_posts ADD COLUMN likes_count INT NOT NULL DEFAULT 0;"); } catch (Exception $e) {}
 } catch (Exception $e) {}
 
 $uploadDir = __DIR__ . '/uploads/avatars/';
