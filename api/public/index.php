@@ -171,12 +171,25 @@ try {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
 
+    $pdo->exec("CREATE TABLE IF NOT EXISTS student_qr_tokens (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        student_id VARCHAR(100) NOT NULL UNIQUE,
+        qr_token VARCHAR(128) NOT NULL UNIQUE,
+        version INT DEFAULT 1,
+        is_revoked TINYINT(1) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
     try { $pdo->exec("ALTER TABLE classes MODIFY id VARCHAR(100) NOT NULL;"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE students MODIFY class_id VARCHAR(100) NOT NULL;"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE attendance_sessions MODIFY class_id VARCHAR(100) NOT NULL;"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE attendance_sessions ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE attendance_records MODIFY student_id VARCHAR(100) NOT NULL;"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE attendance_records ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE attendance_records ADD COLUMN method VARCHAR(50) DEFAULT 'MANUAL';"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE attendance_records ADD COLUMN verified_by VARCHAR(150) NULL;"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE attendance_records ADD COLUMN scanned_at DATETIME NULL;"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE students ADD COLUMN avatar_url LONGTEXT NULL;"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE students MODIFY COLUMN avatar_url LONGTEXT NULL;"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE users ADD COLUMN avatar_url LONGTEXT NULL;"); } catch (Exception $e) {}
@@ -248,6 +261,216 @@ if (strpos($requestUri, 'api/logs') !== false || strpos($uri, 'api/logs') !== fa
     if ($method === 'DELETE') {
         $pdo->exec("TRUNCATE TABLE activity_logs");
         jsonResponse(['success' => true, 'message' => 'Cleared all logs']);
+    }
+}
+
+// ============================================================
+// STUDENT QR TOKENS & CAMERA VERIFICATION API (/thcs/api/qr)
+// ============================================================
+if (strpos($requestUri, 'api/qr') !== false || strpos($uri, 'api/qr') !== false) {
+    // 1. GET /thcs/api/qr/token?student_id=xxx OR class_id=xxx
+    if (strpos($uri, 'token') !== false || (isset($_GET['action']) && $_GET['action'] === 'token')) {
+        $student_id = $_GET['student_id'] ?? null;
+        $class_id   = $_GET['class_id'] ?? null;
+
+        if ($student_id) {
+            $stmt = $pdo->prepare("SELECT * FROM student_qr_tokens WHERE student_id = :sid AND is_revoked = 0 LIMIT 1");
+            $stmt->execute([':sid' => $student_id]);
+            $row = $stmt->fetch();
+            if (!$row) {
+                $token = 'THCS-QR-v1-' . bin2hex(random_bytes(16));
+                $iStmt = $pdo->prepare("INSERT INTO student_qr_tokens (student_id, qr_token, version, is_revoked) VALUES (:sid, :tk, 1, 0)");
+                $iStmt->execute([':sid' => $student_id, ':tk' => $token]);
+                jsonResponse(['success' => true, 'qr_token' => $token, 'version' => 1]);
+            } else {
+                jsonResponse(['success' => true, 'qr_token' => $row['qr_token'], 'version' => intval($row['version'])]);
+            }
+        } elseif ($class_id) {
+            $stmt = $pdo->prepare("SELECT s.id as student_id, s.full_name, s.student_code, s.class_id, q.qr_token, q.version 
+                                  FROM students s 
+                                  LEFT JOIN student_qr_tokens q ON s.id = q.student_id AND q.is_revoked = 0 
+                                  WHERE s.class_id = :cid");
+            $stmt->execute([':cid' => $class_id]);
+            $rows = $stmt->fetchAll() ?: [];
+            $results = [];
+            $uStmt = $pdo->prepare("INSERT INTO student_qr_tokens (student_id, qr_token, version, is_revoked) VALUES (:sid, :tk, 1, 0)");
+            foreach ($rows as $r) {
+                $tok = $r['qr_token'];
+                if (!$tok) {
+                    $tok = 'THCS-QR-v1-' . bin2hex(random_bytes(16));
+                    try {
+                        $uStmt->execute([':sid' => $r['student_id'], ':tk' => $tok]);
+                    } catch (Exception $e) {}
+                }
+                $results[] = [
+                    'student_id'   => $r['student_id'],
+                    'full_name'    => $r['full_name'],
+                    'student_code' => $r['student_code'],
+                    'qr_token'     => $tok,
+                    'version'      => intval($r['version'] ?? 1),
+                ];
+            }
+            jsonResponse(['success' => true, 'tokens' => $results]);
+        }
+    }
+
+    // 2. POST /thcs/api/qr/revoke (Revoke and issue new token for lost card)
+    if (strpos($uri, 'revoke') !== false) {
+        $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
+        $student_id = $input['student_id'] ?? null;
+        $teacher_name = $input['teacher_name'] ?? 'Giáo viên';
+        if ($student_id) {
+            $pdo->prepare("UPDATE student_qr_tokens SET is_revoked = 1 WHERE student_id = :sid")->execute([':sid' => $student_id]);
+            $newToken = 'THCS-QR-v2-' . bin2hex(random_bytes(16));
+            $pdo->prepare("INSERT INTO student_qr_tokens (student_id, qr_token, version, is_revoked) VALUES (:sid, :tk, 2, 0)")
+                ->execute([':sid' => $student_id, ':tk' => $newToken]);
+            
+            $pdo->prepare("INSERT INTO activity_logs (user_name, user_role, action_type, description) VALUES (:uname, 'homeroom_teacher', 'CẤU HÌNH', :desc)")
+                ->execute([':uname' => $teacher_name, ':desc' => "Thu hồi thẻ QR cũ và cấp mã QR mới (v2) cho học sinh ID: $student_id"]);
+            
+            jsonResponse(['success' => true, 'qr_token' => $newToken, 'version' => 2, 'message' => 'Đã thu hồi thẻ cũ và cấp QR mới thành công']);
+        }
+        jsonResponse(['error' => 'Thiếu student_id'], 400);
+    }
+
+    // 3. POST /thcs/api/qr/scan-lookup (Scan QR code WITHOUT saving attendance)
+    if (strpos($uri, 'scan-lookup') !== false) {
+        $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
+        $qr_token   = trim($input['qr_token'] ?? '');
+        $class_id   = strval($input['class_id'] ?? '');
+        $session_id = intval($input['session_id'] ?? 0);
+        $teacher_name = strval($input['teacher_name'] ?? 'Giáo viên');
+
+        if (empty($qr_token) || empty($class_id)) {
+            jsonResponse(['success' => false, 'error_code' => 'INVALID_PAYLOAD', 'message' => 'Mã QR hoặc thông tin lớp không hợp lệ.'], 400);
+        }
+
+        $stmt = $pdo->prepare("
+            SELECT q.qr_token, q.version, q.is_revoked, s.id as student_id, s.student_code, s.full_name, s.gender, s.class_id, s.avatar_url, c.name as class_name
+            FROM student_qr_tokens q
+            JOIN students s ON q.student_id = s.id
+            LEFT JOIN classes c ON s.class_id = c.id
+            WHERE (q.qr_token = :tk OR s.student_code = :tk) AND q.is_revoked = 0
+            LIMIT 1
+        ");
+        $stmt->execute([':tk' => $qr_token]);
+        $student = $stmt->fetch();
+
+        if (!$student) {
+            $revStmt = $pdo->prepare("SELECT * FROM student_qr_tokens WHERE qr_token = :tk AND is_revoked = 1 LIMIT 1");
+            $revStmt->execute([':tk' => $qr_token]);
+            if ($revStmt->fetch()) {
+                $pdo->prepare("INSERT INTO activity_logs (user_name, user_role, action_type, description, class_id) VALUES (:un, 'teacher', 'ĐIỂM DANH', :d, :cid)")
+                    ->execute([':un' => $teacher_name, ':d' => "CẢNH BÁO: Thẻ QR đã bị thu hồi/khóa được quét vào hệ thống (Token: $qr_token)", ':cid' => $class_id]);
+                jsonResponse(['success' => false, 'error_code' => 'QR_REVOKED', 'message' => '⛔ Thẻ QR này đã bị thu hồi hoặc báo mất! Vui lòng cấp thẻ mới cho học sinh.'], 400);
+            }
+
+            $pdo->prepare("INSERT INTO activity_logs (user_name, user_role, action_type, description, class_id) VALUES (:un, 'teacher', 'ĐIỂM DANH', :d, :cid)")
+                ->execute([':un' => $teacher_name, ':d' => "CẢNH BÁO: Mã QR không tồn tại trong hệ thống (Token: $qr_token)", ':cid' => $class_id]);
+            jsonResponse(['success' => false, 'error_code' => 'QR_NOT_FOUND', 'message' => '❌ Mã QR không tồn tại hoặc không hợp lệ!'], 404);
+        }
+
+        if (strval($student['class_id']) !== strval($class_id)) {
+            $pdo->prepare("INSERT INTO activity_logs (user_name, user_role, action_type, description, class_id) VALUES (:un, 'teacher', 'ĐIỂM DANH', :d, :cid)")
+                ->execute([':un' => $teacher_name, ':d' => "CẢNH BÁO TRÁI LỚP: Học sinh {$student['full_name']} ({$student['class_name']}) quét vào Lớp $class_id", ':cid' => $class_id]);
+            jsonResponse([
+                'success' => false,
+                'error_code' => 'WRONG_CLASS',
+                'message' => "⚠️ Học sinh {$student['full_name']} thuộc lớp {$student['class_name']}, không thuộc lớp này!",
+                'student' => $student
+            ], 400);
+        }
+
+        $already_scanned = false;
+        $existing_status = null;
+        $scanned_time = null;
+
+        if ($session_id > 0) {
+            $rStmt = $pdo->prepare("SELECT * FROM attendance_records WHERE session_id = :sid AND student_id = :st_id LIMIT 1");
+            $rStmt->execute([':sid' => $session_id, ':st_id' => $student['student_id']]);
+            $rec = $rStmt->fetch();
+            if ($rec && in_array($rec['status'], ['PRESENT', 'LATE', 'EXCUSED_ABSENCE', 'UNEXCUSED_ABSENCE'])) {
+                $already_scanned = true;
+                $existing_status = $rec['status'];
+                $scanned_time = $rec['updated_at'] ?? $rec['scanned_at'];
+            }
+        }
+
+        jsonResponse([
+            'success' => true,
+            'student' => [
+                'student_id'   => $student['student_id'],
+                'student_code' => $student['student_code'],
+                'full_name'    => $student['full_name'],
+                'gender'       => $student['gender'] ?? 'Nam',
+                'class_name'   => $student['class_name'] ?? "Lớp $class_id",
+                'avatar_url'   => $student['avatar_url'],
+                'has_photo'    => !empty($student['avatar_url']),
+            ],
+            'scan_time' => date('H:i:s d/m/Y'),
+            'already_scanned' => $already_scanned,
+            'existing_status' => $existing_status,
+            'scanned_time'    => $scanned_time,
+        ]);
+    }
+
+    // 4. POST /thcs/api/qr/confirm-attendance (Teacher confirms attendance after photo check)
+    if (strpos($uri, 'confirm-attendance') !== false) {
+        $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
+        $session_id   = intval($input['session_id'] ?? 0);
+        $student_id   = strval($input['student_id'] ?? '');
+        $class_id     = strval($input['class_id'] ?? '');
+        $status       = strval($input['status'] ?? 'PRESENT');
+        $teacher_name = strval($input['teacher_name'] ?? 'Giáo viên');
+        $method_type  = strval($input['method'] ?? 'QR_CAMERA');
+
+        if (empty($student_id) || empty($class_id)) {
+            jsonResponse(['success' => false, 'message' => 'Thông tin xác nhận không hợp lệ.'], 400);
+        }
+
+        if ($session_id > 0) {
+            $sessStmt = $pdo->prepare("SELECT is_locked FROM attendance_sessions WHERE id = :sid LIMIT 1");
+            $sessStmt->execute([':sid' => $session_id]);
+            $sess = $sessStmt->fetch();
+            if ($sess && intval($sess['is_locked']) === 1) {
+                jsonResponse(['success' => false, 'message' => '🔒 Phiên điểm danh đã bị khóa. Không thể ghi nhận thêm kết quả!'], 400);
+            }
+        }
+
+        if ($status === 'REJECTED') {
+            $pdo->prepare("INSERT INTO activity_logs (user_name, user_role, action_type, description, class_id) VALUES (:un, 'teacher', 'ĐIỂM DANH', :d, :cid)")
+                ->execute([':un' => $teacher_name, ':d' => "Giáo viên ĐÃ TỪ CHỐI xác nhận điểm danh cho học sinh ID: $student_id", ':cid' => $class_id]);
+            jsonResponse(['success' => true, 'status' => 'REJECTED', 'message' => 'Đã từ chối ghi nhận điểm danh']);
+        }
+
+        $stmt = $pdo->prepare("
+            INSERT INTO attendance_records (session_id, student_id, status, method, verified_by, scanned_at)
+            VALUES (:sid, :st_id, :st, :m, :vby, NOW())
+            ON DUPLICATE KEY UPDATE
+                status = VALUES(status),
+                method = VALUES(method),
+                verified_by = VALUES(verified_by),
+                scanned_at = NOW()
+        ");
+        $stmt->execute([
+            ':sid'   => $session_id,
+            ':st_id' => $student_id,
+            ':st'    => $status,
+            ':m'     => $method_type,
+            ':vby'   => $teacher_name,
+        ]);
+
+        $statusText = $status === 'PRESENT' ? 'CÓ MẶT' : ($status === 'LATE' ? 'ĐỊ MUỘN' : $status);
+        $pdo->prepare("INSERT INTO activity_logs (user_name, user_role, action_type, description, class_id) VALUES (:un, 'teacher', 'ĐIỂM DANH', :d, :cid)")
+            ->execute([':un' => $teacher_name, ':d' => "Xác nhận điểm danh [$statusText] cho học sinh ID: $student_id (Phương thức: $method_type)", ':cid' => $class_id]);
+
+        jsonResponse([
+            'success' => true,
+            'student_id' => $student_id,
+            'status' => $status,
+            'verified_by' => $teacher_name,
+            'message' => "Ghi nhận $statusText thành công!",
+        ]);
     }
 }
 

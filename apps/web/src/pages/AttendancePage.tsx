@@ -8,6 +8,10 @@ import { Lock, Unlock, Save, Search, CheckCircle, RefreshCw } from 'lucide-react
 
 import { removeVietnameseTones } from '../utils/accountUtils';
 import { logActivity } from '../utils/logger';
+import { QRScannerModal } from '../components/qr/QRScannerModal';
+import { StudentIDCardModal } from '../components/qr/StudentIDCardModal';
+import { UserAvatar } from '../components/ui/UserAvatar';
+import { QrCode, Camera, Shuffle } from 'lucide-react';
 
 const API_BASE = '/thcs/api/attendance';
 
@@ -23,6 +27,13 @@ export const AttendancePage: React.FC = () => {
   const [records, setRecords] = useState<any[]>([]);
   const [isLocked, setIsLocked] = useState(false);
   const [isLockModalOpen, setIsLockModalOpen] = useState(false);
+
+  // QR Code & Camera Verification Modals State
+  const [isQRScannerOpen, setIsQRScannerOpen] = useState(false);
+  const [isQRCardModalOpen, setIsQRCardModalOpen] = useState(false);
+  const [selectedStudentForCard, setSelectedStudentForCard] = useState<any | null>(null);
+  const [isRandomAuditOpen, setIsRandomAuditOpen] = useState(false);
+  const [randomAuditStudents, setRandomAuditStudents] = useState<any[]>([]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -85,6 +96,40 @@ export const AttendancePage: React.FC = () => {
   const setAllStatus = (status: AttendanceStatus) => {
     if (isLocked) return;
     setRecords(prev => prev.map(r => ({ ...r, status })));
+  };
+
+  const handleQRConfirmed = (studentId: string | number, status: 'PRESENT' | 'LATE' | 'REJECTED') => {
+    if (status === 'REJECTED') return;
+    setRecords(prev => prev.map(r => String(r.student_id) === String(studentId) ? {
+      ...r,
+      status: status === 'PRESENT' ? 'PRESENT' : 'LATE',
+      method: 'QR_CAMERA',
+      scanned_at: new Date().toLocaleTimeString('vi-VN'),
+    } : r));
+  };
+
+  const handleOpenStudentCard = (studentRecord: any) => {
+    const fullStudent = studentsList.find(s => String(s.id) === String(studentRecord.student_id)) || {
+      id: studentRecord.student_id,
+      full_name: studentRecord.student_name,
+      student_code: studentRecord.student_code || `HS2025${studentRecord.student_id}`,
+      class_id: selectedClass?.id,
+      class_name: selectedClass?.name,
+    };
+    setSelectedStudentForCard(fullStudent as any);
+    setIsQRCardModalOpen(true);
+  };
+
+  const handleTriggerRandomAudit = () => {
+    const presentStudents = records.filter(r => r.status === 'PRESENT' || r.status === 'LATE');
+    if (presentStudents.length === 0) {
+      showToast('⚠️ Chưa có học sinh nào được ghi nhận có mặt để kiểm tra ngẫu nhiên.');
+      return;
+    }
+    const shuffled = [...presentStudents].sort(() => 0.5 - Math.random());
+    const count = Math.min(shuffled.length, Math.floor(Math.random() * 3) + 3);
+    setRandomAuditStudents(shuffled.slice(0, count));
+    setIsRandomAuditOpen(true);
   };
 
   const handleSaveAttendance = async (lockAfterSave = false) => {
@@ -175,6 +220,37 @@ export const AttendancePage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap pt-1">
+          {/* Camera QR Scanning Hub Buttons */}
+          <button
+            type="button"
+            onClick={() => setIsQRScannerOpen(true)}
+            className="px-4 py-2 rounded-2xl bg-gradient-to-r from-[#6C63FF] to-[#5A50E6] text-white text-xs font-black shadow-md hover:shadow-lg hover:scale-[1.02] transition-all flex items-center gap-2 cursor-pointer"
+          >
+            <Camera className="h-4 w-4" />
+            Mở Camera Quét QR & Đối Chiếu Ảnh
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedStudentForCard(null);
+              setIsQRCardModalOpen(true);
+            }}
+            className="px-3.5 py-2 rounded-2xl bg-[#E6F9F3] hover:bg-[#C9F2E5] border border-[#A3F0D9] text-[#0E8360] text-xs font-black shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+          >
+            <QrCode className="h-4 w-4 text-[#0E8360]" />
+            Thẻ QR & In Thẻ Học Sinh
+          </button>
+
+          <button
+            type="button"
+            onClick={handleTriggerRandomAudit}
+            className="px-3.5 py-2 rounded-2xl bg-[#FFF9EB] hover:bg-[#FFE8B3] border border-[#FFE399] text-[#B47800] text-xs font-black shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+          >
+            <Shuffle className="h-4 w-4 text-[#B47800]" />
+            Kiểm Tra Ngẫu Nhiên (3-5 HS)
+          </button>
+
           {isLocked ? (
             <Button variant="danger" size="sm"
               onClick={() => handleSaveAttendance(false).then(() => setIsLocked(false))}
@@ -263,8 +339,14 @@ export const AttendancePage: React.FC = () => {
           <div key={r.student_id} className="p-4 space-y-3">
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
-                <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                  #{idx + 1} · {`HS2025${String(r.student_id).padStart(3, '0')}`}
+                <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                  <span>#{idx + 1} · {`HS2025${String(r.student_id).padStart(3, '0')}`}</span>
+                  <button
+                    onClick={() => handleOpenStudentCard(r)}
+                    className="text-[10px] text-[#6C63FF] font-extrabold hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <QrCode className="h-3 w-3" /> Thẻ QR
+                  </button>
                 </div>
                 <div className="font-extrabold text-slate-900 text-sm leading-tight mt-0.5">{r.student_name}</div>
               </div>
@@ -343,7 +425,26 @@ export const AttendancePage: React.FC = () => {
                 <tr key={r.student_id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="p-3 text-center font-semibold text-slate-500">{idx + 1}</td>
                   <td className="p-3 font-mono font-bold text-slate-500">{`HS2025${String(r.student_id).padStart(3, '0')}`}</td>
-                  <td className="p-3 font-extrabold text-slate-900">{r.student_name}</td>
+                  <td className="p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-extrabold text-slate-900">{r.student_name}</span>
+                      <div className="flex items-center gap-1">
+                        {r.method === 'QR_CAMERA' && (
+                          <span className="text-[9px] font-black bg-[#EEECFF] text-[#6C63FF] px-1.5 py-0.5 rounded border border-[#C0BBFD]">
+                            📷 Quét QR
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenStudentCard(r)}
+                          className="text-[10px] text-[#6C63FF] font-extrabold hover:underline flex items-center gap-0.5 cursor-pointer"
+                          title="Xem & In Thẻ QR Học Sinh"
+                        >
+                          <QrCode className="h-3 w-3" /> Thẻ QR
+                        </button>
+                      </div>
+                    </div>
+                  </td>
                   <td className="p-2.5">
                     <div className="flex flex-wrap items-center gap-1.5">
                       {([
@@ -398,6 +499,58 @@ export const AttendancePage: React.FC = () => {
         <p className="text-xs text-slate-600 leading-relaxed">
           Sau khi khóa, buổi điểm danh sẽ được lưu vĩnh viễn vào cơ sở dữ liệu MySQL và không thể chỉnh sửa nếu không mở khóa bằng tài khoản có quyền.
         </p>
+      </Modal>
+
+      {/* 1. Camera QR Scanner & Photo Verification Modal */}
+      <QRScannerModal
+        isOpen={isQRScannerOpen}
+        onClose={() => setIsQRScannerOpen(false)}
+        classId={selectedClass.id}
+        classNameTitle={selectedClass.name}
+        teacherName={currentUser?.name || 'Giáo viên'}
+        onAttendanceConfirmed={handleQRConfirmed}
+      />
+
+      {/* 2. Student QR ID Card & Print Modal */}
+      <StudentIDCardModal
+        isOpen={isQRCardModalOpen}
+        onClose={() => setIsQRCardModalOpen(false)}
+        student={selectedStudentForCard}
+        allStudents={studentsList as any}
+        className={selectedClass.name}
+        teacherName={currentUser?.name || 'Giáo viên'}
+      />
+
+      {/* 3. Random Audit Verification Check Modal */}
+      <Modal
+        isOpen={isRandomAuditOpen}
+        onClose={() => setIsRandomAuditOpen(false)}
+        title={`🎲 Đối Chiếu Ngẫu Nhiên (${randomAuditStudents.length} Học Sinh Đã Có Mặt)`}
+        footer={<Button variant="primary" onClick={() => setIsRandomAuditOpen(false)}>Hoàn Tất Đối Chiếu</Button>}
+      >
+        <div className="space-y-4 py-1">
+          <div className="p-3.5 rounded-2xl bg-[#EEECFF] border border-[#C0BBFD] text-xs font-bold text-[#6C63FF]">
+            Hệ thống chọn ngẫu nhiên <strong>{randomAuditStudents.length} học sinh</strong> đã được ghi nhận có mặt. Vui lòng đối chiếu trực tiếp hình ảnh với các học sinh đang ngồi trong lớp.
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {randomAuditStudents.map(st => (
+              <div key={st.student_id} className="p-3 rounded-2xl border border-[#E1E6F0] bg-white text-center space-y-2 shadow-2xs">
+                <div className="w-20 h-24 rounded-2xl mx-auto overflow-hidden bg-[#FAFBFF] border-2 border-[#6C63FF] relative">
+                  {st.avatar_url ? (
+                    <img src={st.avatar_url} alt={st.student_name} className="w-full h-full object-cover" />
+                  ) : (
+                    <UserAvatar name={st.student_name} size="md" />
+                  )}
+                </div>
+                <div>
+                  <div className="font-extrabold text-xs text-[#18243A] truncate">{st.student_name}</div>
+                  <div className="text-[10px] text-[#0E8360] font-black mt-0.5">✓ {st.status === 'PRESENT' ? 'Có mặt' : 'Đi muộn'}</div>
+                  {st.scanned_at && <div className="text-[9px] text-[#68758D] font-mono mt-0.5">🕒 {st.scanned_at}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </Modal>
 
     </div>
