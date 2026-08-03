@@ -341,7 +341,7 @@ if (strpos($requestUri, 'api/qr') !== false || strpos($uri, 'api/qr') !== false)
         $session_id = intval($input['session_id'] ?? 0);
         $teacher_name = strval($input['teacher_name'] ?? 'Giáo viên');
 
-        if (empty($qr_token) || empty($class_id)) {
+        if (empty($qr_token) || $class_id === '') {
             jsonResponse(['success' => false, 'error_code' => 'INVALID_PAYLOAD', 'message' => 'Mã QR hoặc thông tin lớp không hợp lệ.'], 400);
         }
 
@@ -424,7 +424,7 @@ if (strpos($requestUri, 'api/qr') !== false || strpos($uri, 'api/qr') !== false)
         $teacher_name = strval($input['teacher_name'] ?? 'Giáo viên');
         $method_type  = strval($input['method'] ?? 'QR_CAMERA');
 
-        if (empty($student_id) || empty($class_id)) {
+        if ($student_id === '' || $class_id === '') {
             jsonResponse(['success' => false, 'message' => 'Thông tin xác nhận không hợp lệ.'], 400);
         }
 
@@ -822,7 +822,7 @@ if ((strpos($requestUri, 'attendance') !== false || strpos($uri, 'attendance') !
         $sessionDate = preg_replace('/[^0-9\-]/', '', strval($input['session_date'] ?? date('Y-m-d')));
         $sessionType = in_array($input['session_type'] ?? '', ['morning', 'afternoon']) ? $input['session_type'] : 'morning';
 
-        if (empty($classId) || empty($sessionDate)) {
+        if ($classId === '' || empty($sessionDate)) {
             jsonResponse(['success' => false, 'message' => 'Thiếu class_id hoặc session_date'], 422);
         }
 

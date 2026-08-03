@@ -4,6 +4,7 @@ import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
 import { UserAvatar } from '../ui/UserAvatar';
 import { QrCode, Printer, RefreshCw, AlertTriangle, ShieldCheck, Users } from 'lucide-react';
+import { generateQRCodeDataUrl } from '../../utils/qrGenerator';
 
 interface StudentIDCardModalProps {
   isOpen: boolean;
@@ -34,7 +35,7 @@ export const StudentIDCardModal: React.FC<StudentIDCardModalProps> = ({
   const cardRef = useRef<HTMLDivElement>(null);
 
   const getQRImageUrl = (text: string) => {
-    return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(text)}`;
+    return generateQRCodeDataUrl(text);
   };
 
   // Fetch or generate QR token for student
