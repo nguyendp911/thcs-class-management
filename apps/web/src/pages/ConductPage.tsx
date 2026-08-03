@@ -9,6 +9,7 @@ import { Modal } from '../components/ui/Modal';
 import {
   Plus, Trophy, Medal, Search, Edit, Trash2, Settings, CheckCircle, Users, Award, Star
 } from 'lucide-react';
+import { removeVietnameseTones } from '../utils/accountUtils';
 
 interface CriteriaItem {
   id: number;
@@ -220,10 +221,16 @@ export const ConductPage: React.FC = () => {
     return { label: 'Yếu', variant: 'danger' as const };
   };
 
-  const filteredLeaderboard = leaderboardData.filter(item =>
-    item.student.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.student.student_code.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredLeaderboard = (leaderboardData || []).filter(item => {
+    if (!item || !item.student) return false;
+    const cleanSearch = removeVietnameseTones((searchTerm || '').trim().toLowerCase());
+    if (!cleanSearch) return true;
+
+    const nameNorm = removeVietnameseTones((item.student.full_name || '').toLowerCase());
+    const codeNorm = removeVietnameseTones((item.student.student_code || item.student.public_id || '').toLowerCase());
+
+    return nameNorm.includes(cleanSearch) || codeNorm.includes(cleanSearch);
+  });
 
   // Top 3 Podium Items arranged for 3D Podium Layout: [Rank 2 (Silver), Rank 1 (Gold Elevated Center), Rank 3 (Bronze)]
   const top1 = leaderboardData[0];

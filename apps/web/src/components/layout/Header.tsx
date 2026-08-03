@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { mockSchoolYears, mockSemesters } from '../../lib/mockData';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
+import { removeVietnameseTones } from '../../utils/accountUtils';
 import type { RoleType } from '../../types';
 
 export const Header: React.FC = () => {
@@ -46,12 +47,23 @@ export const Header: React.FC = () => {
 
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
-    const query = searchQuery.toLowerCase().trim();
-    return studentsList.filter(
-      s => s.full_name.toLowerCase().includes(query) ||
-           s.student_code.toLowerCase().includes(query) ||
-           s.first_name.toLowerCase().includes(query)
-    ).slice(0, 5);
+    const query = removeVietnameseTones(searchQuery.trim().toLowerCase());
+    return (studentsList || []).filter((s) => {
+      if (!s) return false;
+      const fullNameNorm = removeVietnameseTones((s.full_name || '').toLowerCase());
+      const codeNorm = removeVietnameseTones((s.student_code || s.public_id || '').toLowerCase());
+      const firstNameNorm = removeVietnameseTones((s.first_name || '').toLowerCase());
+      const guardianPhone = (s.primary_guardian_phone || '').toLowerCase();
+      const guardianNameNorm = removeVietnameseTones((s.primary_guardian_name || '').toLowerCase());
+
+      return (
+        fullNameNorm.includes(query) ||
+        codeNorm.includes(query) ||
+        firstNameNorm.includes(query) ||
+        guardianPhone.includes(query) ||
+        guardianNameNorm.includes(query)
+      );
+    }).slice(0, 6);
   }, [searchQuery, studentsList]);
 
   const handleSelectStudentResult = (studentCode: string) => {

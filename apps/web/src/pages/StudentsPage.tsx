@@ -1,9 +1,9 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { mockUsers, mockGuardians } from '../lib/mockData';
 import type { Student, User } from '../types';
-import { generateUsername } from '../utils/accountUtils';
+import { generateUsername, removeVietnameseTones } from '../utils/accountUtils';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
@@ -14,8 +14,18 @@ import * as XLSX from 'xlsx';
 
 export const StudentsPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlSearchTerm = searchParams.get('search') || '';
+
   const { selectedClass, classesList, studentsList: students, setStudentsList: saveStudentsList } = useAuth();
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(urlSearchTerm);
+
+  useEffect(() => {
+    const q = searchParams.get('search');
+    if (q !== null) {
+      setSearchTerm(q);
+    }
+  }, [searchParams]);
   const [selectedGroup, setSelectedGroup] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [selectedStudents, setSelectedStudents] = useState<number[]>([]);
@@ -282,12 +292,25 @@ export const StudentsPage: React.FC = () => {
   };
 
   const filteredStudents = useMemo(() => {
-    return students.filter((s: Student) => {
+    const cleanSearch = removeVietnameseTones((searchTerm || '').trim().toLowerCase());
+
+    return (students || []).filter((s: Student) => {
+      if (!s) return false;
+
+      const fullNameNorm = removeVietnameseTones((s.full_name || '').toLowerCase());
+      const codeNorm = removeVietnameseTones((s.student_code || s.public_id || '').toLowerCase());
+      const phoneNorm = (s.primary_guardian_phone || '').toLowerCase();
+      const guardianNorm = removeVietnameseTones((s.primary_guardian_name || '').toLowerCase());
+      const addressNorm = removeVietnameseTones((s.address || '').toLowerCase());
+
       const matchSearch =
-        s.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.student_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (s.primary_guardian_phone && s.primary_guardian_phone.includes(searchTerm));
-      
+        !cleanSearch ||
+        fullNameNorm.includes(cleanSearch) ||
+        codeNorm.includes(cleanSearch) ||
+        phoneNorm.includes(cleanSearch) ||
+        guardianNorm.includes(cleanSearch) ||
+        addressNorm.includes(cleanSearch);
+
       const matchGroup = selectedGroup === 'all' || s.group_name === selectedGroup;
       const matchStatus = selectedStatus === 'all' || s.status === selectedStatus;
 
@@ -565,7 +588,15 @@ export const StudentsPage: React.FC = () => {
           <input
             type="text"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setSearchTerm(val);
+              if (val.trim()) {
+                setSearchParams({ search: val });
+              } else {
+                setSearchParams({});
+              }
+            }}
             placeholder="Tìm theo tên học sinh, mã HS hoặc SĐT phụ huynh..."
             className="w-full rounded-xl border border-[#E1E6F0] bg-[#FAFBFF] py-2 pl-10 pr-3 text-xs font-bold text-[#18243A] focus:border-[#6C63FF]"
           />

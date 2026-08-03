@@ -6,6 +6,8 @@ import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Lock, Unlock, Save, Search, CheckCircle, RefreshCw } from 'lucide-react';
 
+import { removeVietnameseTones } from '../utils/accountUtils';
+
 const API_BASE = '/thcs/api/attendance';
 
 export const AttendancePage: React.FC = () => {
@@ -122,10 +124,16 @@ export const AttendancePage: React.FC = () => {
     setIsSaving(false);
   };
 
-  const filteredRecords = records.filter(r =>
-    r.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    `hs2025${r.student_id}`.includes(searchTerm.toLowerCase())
-  );
+  const filteredRecords = (records || []).filter(r => {
+    if (!r) return false;
+    const cleanSearch = removeVietnameseTones((searchTerm || '').trim().toLowerCase());
+    if (!cleanSearch) return true;
+
+    const nameNorm = removeVietnameseTones((r.student_name || '').toLowerCase());
+    const codeNorm = removeVietnameseTones((r.student_code || `hs2025${r.student_id}` || '').toLowerCase());
+
+    return nameNorm.includes(cleanSearch) || codeNorm.includes(cleanSearch);
+  });
 
   const counts = {
     notYet:    records.filter(r => r.status === 'NOT_YET').length,
