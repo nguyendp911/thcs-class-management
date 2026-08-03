@@ -1,28 +1,44 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
-import {
-  Users, UserCheck, UserX, Clock, FileText, AlertTriangle, ArrowUpRight,
-  Calendar, MessageSquare, TrendingUp, Table, CheckCircle2, Plus, BookOpen, Phone
-} from 'lucide-react';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { Badge } from '../components/ui/Badge';
+import { UserAvatar } from '../components/ui/UserAvatar';
 import { ExamCountdownWidget } from '../components/ui/ExamCountdownWidget';
+import {
+  Users, UserCheck, UserX, Clock, FileText, CheckCircle2,
+  Calendar, MessageSquare, TrendingUp, BookOpen, ChevronDown, ChevronUp,
+  Award, AlertTriangle, ArrowRight, ShieldCheck, Send, Plus
+} from 'lucide-react';
+import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
-  const { selectedClass, classesList, studentsList } = useAuth();
-  const [showChartTable, setShowChartTable] = useState(false);
+  const { selectedClass, classesList, studentsList, currentRole, currentUser } = useAuth();
 
-  // Live Database Metrics State
+  // Active subtab for Parent Notifications
+  const [notifTab, setNotifTab] = useState<'all' | 'read' | 'pending'>('all');
+  // Expandable state for Subject Teachers Footer Bar
+  const [isTeachersExpanded, setIsTeachersExpanded] = useState(false);
+
+  // Live Database Metrics State & Announcements State
   const [dbStudentCount, setDbStudentCount] = useState<number | null>(null);
   const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
+  const [classAnnouncements, setClassAnnouncements] = useState<any[]>([]);
+  const [classTimetable, setClassTimetable] = useState<any[] | null>(null);
+  const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
+  const [subjectTeachers, setSubjectTeachers] = useState<any[]>([]);
+  const [conductEvents, setConductEvents] = useState<any[]>([]);
+  const [gradebookData, setGradebookData] = useState<any[]>([]);
+  const [homeroomUserEmail, setHomeroomUserEmail] = useState<string>('');
 
-  // Fetch live Dashboard data from MySQL Database API on mount and when selectedClass changes
+  // Fetch live Dashboard metrics from MySQL Database API and LocalStorage
   useEffect(() => {
     if (!selectedClass || !selectedClass.id) return;
-    fetch(`/thcs/api/dashboard?class_id=${selectedClass.id}`)
+    const classId = selectedClass.id;
+
+    // 1. Fetch live metrics from API
+    fetch(`/thcs/api/dashboard?class_id=${classId}`)
       .then(res => res.json())
       .then(res => {
         if (res.success && res.data) {
@@ -33,9 +49,272 @@ export const DashboardPage: React.FC = () => {
         }
       })
       .catch(() => {});
+
+    // 2. Fetch/Load Class Announcements (no demo fallback)
+    try {
+      const savedAnn = localStorage.getItem(`thcs_announcements_class_${classId}`);
+      if (savedAnn) {
+        const parsed = JSON.parse(savedAnn);
+        setClassAnnouncements(Array.isArray(parsed) ? parsed : []);
+      } else {
+        setClassAnnouncements([]);
+      }
+    } catch (e) { setClassAnnouncements([]); }
+
+    // 3. Load Class Timetable
+    try {
+      const savedTt = localStorage.getItem(`thcs_timetable_class_${classId}`);
+      if (savedTt) {
+        const parsed = JSON.parse(savedTt);
+        setClassTimetable(Array.isArray(parsed) && parsed.length > 0 ? parsed : []);
+      } else {
+        setClassTimetable([]);
+      }
+    } catch (e) {
+      setClassTimetable([]);
+    }
+
+    // 4. Load Leave Requests
+    try {
+      const savedLeaves = localStorage.getItem('thcs_leave_requests');
+      if (savedLeaves) {
+        const parsed = JSON.parse(savedLeaves);
+        if (Array.isArray(parsed)) {
+          setLeaveRequests(parsed.filter((l: any) => String(l.class_id || selectedClass.id) === String(classId)));
+        }
+      }
+    } catch (e) {}
+
+    // 5. Load Subject Teachers
+    try {
+      const savedSubs = localStorage.getItem(`thcs_subject_list_class_${classId}`) || localStorage.getItem('thcs_subject_teachers');
+      if (savedSubs) {
+        setSubjectTeachers(JSON.parse(savedSubs));
+      }
+    } catch (e) {}
+
+    // 6. Load Conduct Events from localStorage (synced from DB)
+    try {
+      const savedConduct = localStorage.getItem('thcs_conduct_events');
+      if (savedConduct) {
+        const parsed = JSON.parse(savedConduct);
+        setConductEvents(Array.isArray(parsed) ? parsed : []);
+      } else {
+        setConductEvents([]);
+      }
+    } catch (e) { setConductEvents([]); }
+
+    // 7. Load Gradebook data
+    try {
+      const savedGrades = localStorage.getItem(`thcs_gradebook_class_${classId}`) || localStorage.getItem('thcs_gradebook');
+      if (savedGrades) {
+        const parsed = JSON.parse(savedGrades);
+        setGradebookData(Array.isArray(parsed) ? parsed : []);
+      } else {
+        setGradebookData([]);
+      }
+    } catch (e) { setGradebookData([]); }
+
+    // 8. Load homeroom teacher email from users list
+    try {
+      const savedUsers = localStorage.getItem('thcs_admin_users');
+      if (savedUsers) {
+        const users = JSON.parse(savedUsers);
+        const hrt = users.find((u: any) =>
+          u.role === 'homeroom_teacher' &&
+          u.scopes?.some((s: any) => String(s.class_id) === String(classId))
+        );
+        if (hrt?.email) setHomeroomUserEmail(hrt.email);
+      }
+    } catch (e) {}
+
+  }, [selectedClass?.id, selectedClass?.name]);
+
+  // ALL HOOKS MUST BE CALLED UNCONDITIONALLY BEFORE ANY EARLY RETURNS
+  const totalStudents = studentsList.length > 0 ? studentsList.length : (dbStudentCount !== null ? dbStudentCount : 30);
+
+  // Today's live attendance calculations
+  const localTodayRecords = useMemo(() => {
+    if (!selectedClass?.id) return [];
+    try {
+      const cached = localStorage.getItem(`thcs_today_attendance_${selectedClass.id}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [];
   }, [selectedClass?.id]);
 
-  // If no classes exist in the system, render clean empty state
+  const activeAttendance = attendanceRecords.length > 0 ? attendanceRecords : localTodayRecords;
+  const excusedCount = activeAttendance.filter((r: any) => r.status === 'EXCUSED_ABSENCE').length;
+  const unexcusedCount = activeAttendance.filter((r: any) => r.status === 'UNEXCUSED_ABSENCE' || r.status === 'TRUANCY').length;
+  const lateCount = activeAttendance.filter((r: any) => r.status === 'LATE').length;
+  const presentCount = activeAttendance.length > 0
+    ? activeAttendance.filter((r: any) => r.status === 'PRESENT').length
+    : (totalStudents - (excusedCount + unexcusedCount + lateCount));
+
+  const pendingLeaveRequestsCount = leaveRequests.filter((l: any) => l.status === 'PENDING').length;
+
+  // Real Pending Tasks dynamically generated from real Database state
+  const pendingTasksList = useMemo(() => {
+    const classId = selectedClass?.id || 1;
+    const tasks: any[] = [];
+
+    if (pendingLeaveRequestsCount > 0) {
+      tasks.push({
+        id: 'task-leave',
+        priorityTag: '🔥 Khẩn cấp',
+        tagColor: 'text-[#D32F2F] bg-[#FFEFEF] border-[#FFC0C3]',
+        title: `Có ${pendingLeaveRequestsCount} đơn xin nghỉ cần duyệt`,
+        desc: `Phụ huynh gửi đơn xin phép nghỉ học trực tuyến`,
+        btnLabel: 'Duyệt đơn',
+        btnColor: 'bg-[#FFEFEF] hover:bg-[#FFD6D8] border-[#FFC0C3] text-[#D32F2F]',
+        targetUrl: `/app/classes/${classId}/leave-requests`,
+      });
+    }
+
+    if (unexcusedCount > 0) {
+      tasks.push({
+        id: 'task-unexcused',
+        priorityTag: '🔥 Khẩn cấp',
+        tagColor: 'text-[#D32F2F] bg-[#FFEFEF] border-[#FFC0C3]',
+        title: `Có ${unexcusedCount} học sinh vắng không phép`,
+        desc: `Cần liên hệ phụ huynh xác minh lý do vắng`,
+        btnLabel: 'Kiểm tra',
+        btnColor: 'bg-[#FFEFEF] hover:bg-[#FFD6D8] border-[#FFC0C3] text-[#D32F2F]',
+        targetUrl: `/app/classes/${classId}/attendance`,
+      });
+    }
+
+    if (lateCount > 0) {
+      tasks.push({
+        id: 'task-late',
+        priorityTag: '⚡ Ưu tiên',
+        tagColor: 'text-[#B47800] bg-[#FFF9EB] border-[#FFE399]',
+        title: `Ghi nhận ${lateCount} học sinh đi muộn hôm nay`,
+        desc: `Nhắc nhở nề nếp sinh hoạt đầu giờ`,
+        btnLabel: 'Xem DS',
+        btnColor: 'bg-[#FFF9EB] hover:bg-[#FFE8B3] border-[#FFE399] text-[#B47800]',
+        targetUrl: `/app/classes/${classId}/attendance`,
+      });
+    }
+
+    return tasks.slice(0, 4);
+  }, [pendingLeaveRequestsCount, unexcusedCount, lateCount, selectedClass?.id, selectedClass?.name]);
+
+  // Live filtered notifications list (only real data from DB/localStorage)
+  const filteredNotifs = useMemo(() => {
+    return classAnnouncements.filter((n: any) => {
+      if (notifTab === 'read') return n.status === 'read' || n.status === 'responded';
+      if (notifTab === 'pending') return n.status === 'pending';
+      return true;
+    });
+  }, [classAnnouncements, notifTab]);
+
+  // Timetable entries for today (Monday = 2)
+  const todayTimetableSlots = useMemo(() => {
+    if (!classTimetable || classTimetable.length === 0) return [];
+    return classTimetable.filter((t: any) => Number(t.day_of_week) === 2);
+  }, [classTimetable]);
+
+  // Compute group thi đua rankings from real conduct events
+  const groupRankings = useMemo(() => {
+    const groups: Record<string, { group_name: string; totalPoints: number; studentCount: number }> = {};
+    studentsList.forEach((s: any) => {
+      const g = s.group_name || 'Tổ 1';
+      if (!groups[g]) groups[g] = { group_name: g, totalPoints: 0, studentCount: 0 };
+      groups[g].studentCount++;
+    });
+    conductEvents.forEach((ev: any) => {
+      const student = studentsList.find((s: any) => s.id === ev.student_id);
+      const g = student?.group_name || 'Tổ 1';
+      if (groups[g]) groups[g].totalPoints += (ev.points || 0);
+    });
+    return Object.values(groups).sort((a, b) => b.totalPoints - a.totalPoints);
+  }, [conductEvents, studentsList]);
+
+  // Compute conduct rating per student
+  const studentConductPoints = useMemo(() => {
+    const map: Record<number, number> = {};
+    conductEvents.forEach((ev: any) => {
+      if (!map[ev.student_id]) map[ev.student_id] = 0;
+      map[ev.student_id] += (ev.points || 0);
+    });
+    return map;
+  }, [conductEvents]);
+
+  // Count students with Tốt or better conduct (>= 95 points)
+  const conductGoodCount = useMemo(() => {
+    return studentsList.filter((s: any) => (studentConductPoints[s.id] || 0) >= 95).length;
+  }, [studentsList, studentConductPoints]);
+
+  // Top 3 students by conduct points (tiến bộ)
+  const topProgressStudents = useMemo(() => {
+    return studentsList
+      .map((s: any) => ({ ...s, pts: studentConductPoints[s.id] || 0 }))
+      .sort((a: any, b: any) => b.pts - a.pts)
+      .slice(0, 3);
+  }, [studentsList, studentConductPoints]);
+
+  // Compute gradebook average (real)
+  const { classAvgScore, weakestSubject } = useMemo(() => {
+    if (!gradebookData || gradebookData.length === 0) return { classAvgScore: null, weakestSubject: null };
+    // gradebookData may be array of entries with subject_name and score
+    const subjectMap: Record<string, number[]> = {};
+    gradebookData.forEach((entry: any) => {
+      const subj = entry.subject_name || entry.subject || 'Môn học';
+      const score = parseFloat(entry.score ?? entry.avg_score ?? entry.value ?? 0);
+      if (!isNaN(score) && score > 0) {
+        if (!subjectMap[subj]) subjectMap[subj] = [];
+        subjectMap[subj].push(score);
+      }
+    });
+    const subjectAvgs = Object.entries(subjectMap).map(([name, scores]) => ({
+      name,
+      avg: scores.reduce((a, b) => a + b, 0) / scores.length,
+    }));
+    if (subjectAvgs.length === 0) return { classAvgScore: null, weakestSubject: null };
+    const overall = subjectAvgs.reduce((a, b) => a + b.avg, 0) / subjectAvgs.length;
+    const weakest = subjectAvgs.sort((a, b) => a.avg - b.avg)[0];
+    return {
+      classAvgScore: Math.round(overall * 10) / 10,
+      weakestSubject: weakest,
+    };
+  }, [gradebookData]);
+
+  // Weekly goals based on real data
+  const weeklyGoals = useMemo(() => {
+    const attendancePct = totalStudents > 0 ? Math.round((presentCount / totalStudents) * 100) : 0;
+    return {
+      attendanceOk: attendancePct >= 95,
+      lateOk: lateCount <= 5,
+      conductOk: conductEvents.length > 0,
+      unexcusedOk: unexcusedCount === 0,
+      score: [attendancePct >= 95, lateCount <= 5, conductEvents.length > 0, unexcusedCount === 0].filter(Boolean).length,
+    };
+  }, [presentCount, totalStudents, lateCount, conductEvents.length, unexcusedCount]);
+
+  const weeklyGoalPct = Math.round((weeklyGoals.score / 4) * 100);
+
+  // 7-day trend chart data: only today has real data, others show 0 until data exists
+  const trendData = useMemo(() => {
+    const today = new Date();
+    return Array.from({ length: 7 }).map((_, i) => {
+      const d = new Date(today);
+      d.setDate(today.getDate() - (6 - i));
+      const label = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+      const isToday = i === 6;
+      return {
+        day: label,
+        comat: isToday ? (totalStudents > 0 ? Math.round((presentCount / totalStudents) * 100) : 0) : 0,
+        muon: isToday ? lateCount : 0,
+        thidua: isToday ? (groupRankings[0]?.totalPoints || 0) : 0,
+      };
+    });
+  }, [presentCount, totalStudents, lateCount, groupRankings]);
+
+  // Clean empty state if no class is selected (PLACED AFTER ALL HOOKS!)
   if (!selectedClass || selectedClass.id === 0 || classesList.length === 0) {
     return (
       <div className="space-y-6 pb-12 max-w-full">
@@ -45,14 +324,10 @@ export const DashboardPage: React.FC = () => {
           </div>
           <h2 className="text-2xl font-extrabold text-[#18243A]">Chưa có lớp học nào trong hệ thống</h2>
           <p className="text-xs text-[#68758D] font-bold max-w-md mx-auto leading-relaxed">
-            Hệ thống đang ở trạng thái vận hành sản xuất sạch 100%. Vui lòng vào mục Quản Trị Hệ Thống để Tạo Lớp Học Mới!
+            Hệ thống đang ở trạng thái vận hành sạch 100%. Vui lòng vào trang Quản Trị Hệ Thống để Tạo Lớp Học Mới!
           </p>
           <div className="pt-3">
-            <Button
-              variant="primary"
-              onClick={() => navigate('/app/admin')}
-              icon={<Plus className="h-4 w-4" />}
-            >
+            <Button variant="primary" onClick={() => navigate('/app/admin')} icon={<Plus className="h-4 w-4" />}>
               Đến Trang Quản Trị & Tạo Lớp Học Mới
             </Button>
           </div>
@@ -61,465 +336,726 @@ export const DashboardPage: React.FC = () => {
     );
   }
 
-  const totalStudents = studentsList.length > 0 ? studentsList.length : (dbStudentCount !== null ? dbStudentCount : 0);
-
-  const localTodayRecords = (() => {
-    try {
-      const cached = localStorage.getItem(`thcs_today_attendance_${selectedClass.id}`);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {}
-    return [];
-  })();
-
-  const activeAttendanceRecords = attendanceRecords.length > 0 ? attendanceRecords : localTodayRecords;
-
-  const excused = activeAttendanceRecords.filter((r: any) => r.status === 'EXCUSED_ABSENCE').length;
-  const unexcused = activeAttendanceRecords.filter((r: any) => r.status === 'UNEXCUSED_ABSENCE').length;
-  const late = activeAttendanceRecords.filter((r: any) => r.status === 'LATE').length;
-  const earlyLeave = activeAttendanceRecords.filter((r: any) => r.status === 'EARLY_LEAVE').length;
-  const truancy = activeAttendanceRecords.filter((r: any) => r.status === 'TRUANCY').length;
-
-  const present = activeAttendanceRecords.length > 0
-    ? activeAttendanceRecords.filter((r: any) => r.status === 'PRESENT').length
-    : (totalStudents > 0 ? totalStudents - (excused + unexcused + late + truancy) : 0);
-
-  const pendingLeaves = (() => {
-    try {
-      const parsed = JSON.parse(localStorage.getItem('thcs_leave_requests') || '[]');
-      return Array.isArray(parsed) ? parsed.filter((l: any) => l.status === 'PENDING').length : 0;
-    } catch (e) {
-      return 0;
-    }
-  })();
-
-  // Dynamic warnings clean from demo names
-  const dynamicWarnings = [];
-  if (unexcused > 0) {
-    dynamicWarnings.push({
-      id: 1,
-      title: `Có ${unexcused} học sinh vắng không phép`,
-      description: 'Cần liên hệ trực tiếp với phụ huynh học sinh để làm rõ lý do vắng học.',
-      severity: 'high',
-      student_name: 'Học sinh vắng',
-      action_label: 'Xem điểm danh',
-      target_url: `/app/classes/${selectedClass.id}/attendance`,
-    });
-  }
-  if (pendingLeaves > 0) {
-    dynamicWarnings.push({
-      id: 2,
-      title: `Có ${pendingLeaves} đơn xin nghỉ học chưa xử lý`,
-      description: 'Phụ huynh học sinh đã gửi đơn xin nghỉ học trực tuyến cần được Giáo viên phê duyệt.',
-      severity: 'medium',
-      student_name: 'Phụ huynh học sinh',
-      action_label: 'Duyệt đơn ngay',
-      target_url: `/app/classes/${selectedClass.id}/leave-requests`,
-    });
-  }
-  if (truancy > 0) {
-    dynamicWarnings.push({
-      id: 3,
-      title: `Có ${truancy} học sinh bỏ tiết / cúp tiết`,
-      description: 'Ghi nhận học sinh vi phạm nề nếp tiết học trong ngày.',
-      severity: 'high',
-      student_name: 'Vi phạm nề nếp',
-      action_label: 'Kiểm tra nề nếp',
-      target_url: `/app/classes/${selectedClass.id}/attendance`,
-    });
-  }
-
-  // Attendance trend chart
-  const todayComat = present + late;
-  const todayVang = excused + unexcused + truancy;
-
-  const chartData = [
-    { day: 'Thứ 2', comat: totalStudents, vang: 0 },
-    { day: 'Thứ 3', comat: totalStudents, vang: 0 },
-    { day: 'Thứ 4', comat: totalStudents, vang: 0 },
-    { day: 'Thứ 5', comat: totalStudents, vang: 0 },
-    { day: 'Hôm nay', comat: todayComat, vang: todayVang },
-  ];
+  // User display name & role title
+  const rawName = currentUser?.name || '';
+  const cleanName = rawName.replace(/\s*\([^)]*\)/g, '');
+  const isTeacher = currentRole === 'homeroom_teacher' || currentRole === 'subject_teacher' || currentRole === 'superadmin' || currentRole === 'admin';
+  const greetingTitle = isTeacher ? `Chào buổi sáng, thầy ${cleanName} ☀️` : `Chào mừng ${cleanName} ☀️`;
+  const homeroomTeacherName = selectedClass.homeroom_teacher_name || '';
 
   return (
-    <div className="space-y-6 pb-12 max-w-full overflow-x-clip">
-      {/* Page Header & Quick Actions */}
-      <div className="flex flex-col gap-3">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#18243A] tracking-tight">
-            Tổng quan {selectedClass.name}
-          </h1>
-          <p className="text-sm text-[#68758D] font-bold mt-1">
-            Sĩ số chính thức: <span className="font-extrabold text-[#6C63FF]">{totalStudents} học sinh</span> | GVCN: <span className="font-extrabold text-[#0E8360]">{selectedClass.homeroom_teacher_name}</span>
-          </p>
-        </div>
+    <div className="space-y-5 pb-12 max-w-full overflow-x-clip text-[#18243A] font-sans">
 
-        {/* Quick Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          <Button
-            size="sm"
-            variant="primary"
-            onClick={() => navigate(`/app/classes/${selectedClass.id}/attendance`)}
-            icon={<Calendar className="h-4 w-4" />}
-          >
-            Điểm danh hôm nay
-          </Button>
-          <Button
-            size="sm"
-            variant="mint"
-            onClick={() => navigate(`/app/classes/${selectedClass.id}/announcements`)}
-            icon={<MessageSquare className="h-4 w-4" />}
-          >
-            Tạo thông báo
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => navigate(`/app/classes/${selectedClass.id}/reports`)}
-            icon={<FileText className="h-4 w-4" />}
-          >
-            Xuất báo cáo
-          </Button>
-        </div>
+      {/* 12-COLUMN DASHBOARD GRID: 8 COLS (LEFT MAIN) / 4 COLS (RIGHT SIDEBAR) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
 
-        {/* Live Exam Countdown & Event Tracker Widget */}
-        <ExamCountdownWidget />
-      </div>
+        {/* ========================================================================= */}
+        {/* LEFT MAIN CONTENT COLUMN (8 COLUMNS / ~68%) */}
+        {/* ========================================================================= */}
+        <div className="lg:col-span-8 space-y-5">
 
-      {/* Summary Stat Cards Row */}
-      <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-6">
-        <div className="clay-card-purple p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[#6C63FF]">
-            <span className="text-xs font-extrabold uppercase tracking-wider">Sĩ số lớp</span>
-            <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center shadow-2xs">
-              <Users className="h-4 w-4 text-[#6C63FF]" />
-            </div>
-          </div>
-          <div className="mt-3 text-3xl font-extrabold text-[#18243A]">{totalStudents}</div>
-          <div className="text-xs font-bold text-[#68758D] mt-1">{selectedClass.room} ({totalStudents}/{selectedClass.capacity || 45} em)</div>
-        </div>
+          {/* 1. KHỐI CHÀO MỪNG NỔI BẬT (HERO WELCOME CARD) */}
+          <div className="relative rounded-3xl p-6 md:p-7 bg-gradient-to-br from-[#EEECFF] via-[#F4F3FF] to-[#E6F9F3] border-2 border-[#C0BBFD] shadow-[0_12px_32px_rgba(108,99,255,0.12)] overflow-hidden transition-all">
+            {/* Ambient Background Glow Effects */}
+            <div className="absolute -top-16 -left-16 w-56 h-56 bg-[#6C63FF]/20 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="absolute -bottom-16 -right-16 w-56 h-56 bg-[#22C997]/20 rounded-full blur-3xl pointer-events-none"></div>
 
-        <div className="clay-card-mint p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[#0E8360]">
-            <span className="text-xs font-extrabold uppercase tracking-wider">Có mặt</span>
-            <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center shadow-2xs">
-              <UserCheck className="h-4 w-4 text-[#22C997]" />
-            </div>
-          </div>
-          <div className="mt-3 text-3xl font-extrabold text-[#18243A]">{present}</div>
-          <div className="text-xs font-extrabold text-[#0E8360] mt-1">
-            {totalStudents > 0 ? ((present / totalStudents) * 100).toFixed(0) : 0}% sĩ số
-          </div>
-        </div>
+            <div className="relative z-10 space-y-3.5 max-w-xl">
+              {/* Scope Badge */}
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/90 border border-[#C0BBFD] shadow-2xs text-[11px] font-black text-[#6C63FF]">
+                <span className="w-2 h-2 rounded-full bg-[#22C997] animate-ping"></span>
+                <span>TRUNG TÂM ĐIỀU HÀNH LỚP HỌC · {selectedClass.name} ({selectedClass.room || 'Phòng học'})</span>
+              </div>
 
-        <div className="clay-card p-4 bg-[#FFF9EB] border-[#FFE399] flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[#B47800]">
-            <span className="text-xs font-extrabold uppercase tracking-wider">Vắng phép</span>
-            <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center shadow-2xs">
-              <Clock className="h-4 w-4 text-[#F6B73C]" />
-            </div>
-          </div>
-          <div className="mt-3 text-3xl font-extrabold text-[#18243A]">{excused}</div>
-          <div className="text-xs font-bold text-[#B47800] mt-1">Sốt & việc nhà</div>
-        </div>
+              <h1 className="text-2xl sm:text-3xl font-black text-[#18243A] tracking-tight leading-tight flex items-center gap-2">
+                {greetingTitle}
+              </h1>
 
-        <div className="clay-card p-4 bg-[#FFEFEF] border-[#FFC0C3] flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[#D32F2F]">
-            <span className="text-xs font-extrabold uppercase tracking-wider">Không phép</span>
-            <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center shadow-2xs">
-              <UserX className="h-4 w-4 text-[#FF5D68]" />
-            </div>
-          </div>
-          <div className="mt-3 text-3xl font-extrabold text-[#18243A]">{unexcused}</div>
-          <div className="text-xs font-bold text-[#D32F2F] mt-1">Cần liên hệ gia đình</div>
-        </div>
+              <p className="text-xs sm:text-sm text-[#344054] font-extrabold leading-relaxed">
+                Lớp <span className="text-[#6C63FF] font-black text-base">{selectedClass.name}</span> có{' '}
+                <span className="text-[#0E8360] font-black text-base bg-[#E6F9F3] px-2 py-0.5 rounded-lg border border-[#A3F0D9]">{presentCount}/{totalStudents}</span> học sinh có mặt hôm nay. Cùng giữ vững nề nếp và tiếp tục phát huy nhé!
+              </p>
 
-        <div className="clay-card-purple p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[#6C63FF]">
-            <span className="text-xs font-extrabold uppercase tracking-wider">Đi muộn</span>
-            <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center shadow-2xs">
-              <Clock className="h-4 w-4 text-[#6C63FF]" />
-            </div>
-          </div>
-          <div className="mt-3 text-3xl font-extrabold text-[#18243A]">{late}</div>
-          <div className="text-xs font-bold text-[#68758D] mt-1">Ghi nhận 15p</div>
-        </div>
-
-        <div className="clay-card p-4 bg-[#EBF5FF] border-[#D6EBFF] flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[#3B82F6]">
-            <span className="text-xs font-extrabold uppercase tracking-wider">Đơn xin nghỉ</span>
-            <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center shadow-2xs">
-              <FileText className="h-4 w-4 text-[#3B82F6]" />
-            </div>
-          </div>
-          <div className="mt-3 text-3xl font-extrabold text-[#18243A]">{pendingLeaves}</div>
-          <div className="text-xs font-bold text-[#3B82F6] mt-1">Cần duyệt ngay</div>
-        </div>
-      </div>
-
-      {/* Additional Stats: Xin về & Cúp tiết */}
-      {(earlyLeave > 0 || truancy > 0) && (
-        <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-2">
-          <div className="clay-card p-4 bg-[#F0F9FF] border-[#BAE6FD] flex items-center justify-between">
-            <div>
-              <div className="text-xs font-extrabold text-[#0284C7] uppercase">Xin về giữa buổi</div>
-              <div className="mt-1 text-2xl font-extrabold text-[#0369A1]">{earlyLeave} học sinh</div>
-            </div>
-            <Badge variant="info">Xin về</Badge>
-          </div>
-          <div className="clay-card p-4 bg-[#FFF1F2] border-[#FECDD3] flex items-center justify-between">
-            <div>
-              <div className="text-xs font-extrabold text-[#E11D48] uppercase">Cúp tiết / Bỏ tiết</div>
-              <div className="mt-1 text-2xl font-extrabold text-[#BE123C]">{truancy} học sinh</div>
-            </div>
-            <Badge variant="danger">Vi phạm nề nếp</Badge>
-          </div>
-        </div>
-      )}
-
-      {/* Dynamic Clean Priority Warnings Block */}
-      <div className="clay-card p-5 border-[#E1E6F0]">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#FFF9EB] border border-[#FFE399] flex items-center justify-center">
-              <AlertTriangle className="h-5 w-5 text-[#F6B73C]" />
-            </div>
-            <h2 className="text-base font-extrabold text-[#18243A]">
-              Thông Báo Cần Chú Ý Đặc Biệt ({dynamicWarnings.length})
-            </h2>
-          </div>
-          <Badge variant="purple">Tự động theo dõi</Badge>
-        </div>
-
-        {dynamicWarnings.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {dynamicWarnings.map((warn) => {
-              const cardBgStyle =
-                warn.severity === 'high'
-                  ? 'bg-gradient-to-br from-[#FFF5F5] to-[#FFEFEF] border-[#FFC0C3]'
-                  : 'bg-gradient-to-br from-[#FFF9F0] to-[#FFF4E5] border-[#FFE399]';
-
-              return (
-                <div
-                  key={warn.id}
-                  className={`rounded-2xl border p-4 shadow-2xs flex flex-col justify-between hover:shadow-md transition-all ${cardBgStyle}`}
+              {/* Action Buttons Hub - High Prominence Buttons */}
+              <div className="flex flex-wrap items-center gap-3 pt-2">
+                <button
+                  onClick={() => navigate(`/app/classes/${selectedClass.id}/attendance`)}
+                  className="px-4 py-2.5 rounded-2xl bg-[#6C63FF] hover:bg-[#5A50E6] text-white text-xs font-black shadow-md hover:shadow-lg hover:scale-[1.02] transition-all flex items-center gap-2 cursor-pointer"
                 >
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <Badge variant={warn.severity === 'high' ? 'danger' : 'warning'}>
-                        {warn.severity === 'high' ? 'Ưu tiên Cao' : 'Cảnh báo'}
-                      </Badge>
-                      <span className="text-xs font-extrabold text-[#68758D]">Cần xử lý</span>
-                    </div>
-                    <h3 className="text-sm font-extrabold text-[#18243A] mt-1">{warn.title}</h3>
-                    <p className="text-xs text-[#4A5568] mt-1 leading-relaxed font-medium">{warn.description}</p>
-                  </div>
+                  <UserCheck className="h-4 w-4" />
+                  Điểm danh hôm nay
+                </button>
+                <button
+                  onClick={() => navigate(`/app/classes/${selectedClass.id}/conduct`)}
+                  className="px-4 py-2.5 rounded-2xl bg-[#0E8360] hover:bg-[#0A6B4E] text-white text-xs font-black shadow-md hover:shadow-lg hover:scale-[1.02] transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  <Award className="h-4 w-4 text-[#A3F0D9]" />
+                  Ghi nhận thi đua
+                </button>
+                <button
+                  onClick={() => navigate(`/app/classes/${selectedClass.id}/announcements`)}
+                  className="px-4 py-2.5 rounded-2xl bg-white hover:bg-[#F4F3FF] border-2 border-[#6C63FF] text-[#6C63FF] text-xs font-black shadow-xs transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  <Send className="h-3.5 w-3.5 text-[#6C63FF]" />
+                  Gửi thông báo
+                </button>
+                <button
+                  onClick={() => navigate(`/app/classes/${selectedClass.id}/students`)}
+                  className="px-4 py-2.5 rounded-2xl bg-[#FFF9EB] hover:bg-[#FFE8B3] border border-[#FFE399] text-[#B47800] text-xs font-black shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  🪑 Sơ đồ chỗ ngồi
+                </button>
+              </div>
+            </div>
 
-                  <div className="mt-4 pt-3 border-t border-[#E1E6F0]/60 flex items-center justify-between">
-                    <span className="text-xs font-bold text-[#18243A] truncate max-w-[130px]">{warn.student_name}</span>
-                    <button
-                      onClick={() => navigate(warn.target_url)}
-                      className="text-xs font-extrabold text-[#6C63FF] hover:text-[#5148E5] flex items-center gap-1 bg-white/90 px-3 py-1.5 rounded-xl border border-[#C0BBFD] hover:bg-[#EEECFF] transition-colors shrink-0 shadow-2xs cursor-pointer"
-                    >
-                      {warn.action_label}
-                      <ArrowUpRight className="h-3.5 w-3.5" />
-                    </button>
+            {/* Educational 3D Graphic (Right Side) */}
+            <div className="hidden sm:flex absolute right-4 bottom-2 top-2 items-center justify-center opacity-95 pointer-events-none">
+              <div className="relative w-48 h-40 flex items-center justify-center">
+                <div className="absolute inset-0 bg-gradient-to-tr from-[#6C63FF]/30 to-[#22C997]/30 rounded-full filter blur-2xl"></div>
+                <div className="relative flex items-center gap-2 scale-95">
+                  <div className="w-22 h-28 bg-white/95 border-2 border-[#C0BBFD] rounded-2xl p-2.5 shadow-lg transform -rotate-6 flex flex-col justify-between">
+                    <div className="w-full h-2.5 bg-[#6C63FF] rounded-full"></div>
+                    <div className="space-y-1.5">
+                      <div className="w-full h-1.5 bg-[#EEECFF] rounded-full"></div>
+                      <div className="w-4/5 h-1.5 bg-[#EEECFF] rounded-full"></div>
+                      <div className="w-3/5 h-1.5 bg-[#EEECFF] rounded-full"></div>
+                    </div>
+                    <div className="text-right text-xs">🎓</div>
+                  </div>
+                  <div className="w-18 h-22 bg-emerald-500/15 border-2 border-[#A3F0D9] rounded-2xl p-2 shadow-md transform rotate-12 flex items-center justify-center text-3xl">
+                    🪴
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="rounded-2xl bg-[#E6F9F3] border border-[#A3F0D9] p-4 text-xs font-extrabold text-[#0E8360] flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5 text-[#22C997]" />
-            <span>Trạng thái lớp học bình thường. Hiện chưa có cảnh báo hoặc vi phạm nề nếp cần chú ý đặc biệt.</span>
-          </div>
-        )}
-      </div>
-
-      {/* Analytics Chart & Tasks Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Attendance Trend Chart */}
-        <div className="lg:col-span-2 clay-card p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-base font-extrabold text-[#18243A] flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-[#6C63FF]" />
-                Xu hướng chuyên cần 7 ngày gần nhất
-              </h3>
-              <p className="text-xs text-[#68758D] font-bold mt-0.5">Biểu đồ cập nhật tự động từ dữ liệu chuyên cần MySQL</p>
-            </div>
-
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setShowChartTable(!showChartTable)}
-              icon={<Table className="h-4 w-4" />}
-            >
-              {showChartTable ? 'Xem Biểu đồ' : 'Xem Bảng'}
-            </Button>
-          </div>
-
-          {!showChartTable ? (
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E1E6F0" />
-                  <XAxis dataKey="day" tick={{ fontSize: 11, fontWeight: 700, fill: '#68758D' }} />
-                  <YAxis tick={{ fontSize: 11, fontWeight: 700, fill: '#68758D' }} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#18243A',
-                      borderRadius: '16px',
-                      color: '#fff',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                    }}
-                  />
-                  <Bar dataKey="comat" name="Có mặt & Trễ" fill="#6C63FF" radius={[8, 8, 0, 0]} />
-                  <Bar dataKey="vang" name="Vắng & Cúp tiết" fill="#FF5D68" radius={[8, 8, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="rounded-xl border border-[#E1E6F0] overflow-hidden">
-              <table className="w-full text-left text-xs font-bold text-[#18243A]">
-                <thead className="bg-[#FAFBFF] border-b border-[#E1E6F0] text-[#68758D] text-[11px] uppercase">
-                  <tr>
-                    <th className="p-3">Ngày</th>
-                    <th className="p-3">Có mặt & Đi muộn</th>
-                    <th className="p-3">Vắng & Cúp tiết</th>
-                    <th className="p-3 text-right">Tỷ lệ đi học</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E1E6F0]">
-                  {chartData.map((row, i) => {
-                    const totalDay = row.comat + row.vang;
-                    const rate = totalDay > 0 ? ((row.comat / totalDay) * 100).toFixed(1) : '100.0';
-                    return (
-                      <tr key={i} className="hover:bg-[#FAFBFF]">
-                        <td className="p-3 font-extrabold">{row.day}</td>
-                        <td className="p-3 text-[#0E8360] font-mono">{row.comat} HS</td>
-                        <td className="p-3 text-[#D32F2F] font-mono">{row.vang} HS</td>
-                        <td className="p-3 text-right font-extrabold text-[#6C63FF]">{rate}%</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Quick Links & Class Schedule Overview */}
-        <div className="clay-card p-5 space-y-4">
-          <h3 className="text-base font-extrabold text-[#18243A]">Hoạt động nhanh lớp học</h3>
-
-          <div className="space-y-2.5">
-            <button
-              onClick={() => navigate(`/app/classes/${selectedClass.id}/attendance`)}
-              className="w-full p-3 rounded-2xl bg-[#EEECFF] border border-[#C0BBFD] text-left flex items-center justify-between transition-all hover:scale-[1.02] cursor-pointer"
-            >
-              <div>
-                <div className="text-xs font-extrabold text-[#6C63FF]">Chuyên cần & Điểm danh</div>
-                <div className="text-[10px] text-[#68758D] font-bold mt-0.5">Lưu trực tiếp vào MySQL Server</div>
               </div>
-              <ArrowUpRight className="h-4 w-4 text-[#6C63FF]" />
-            </button>
+            </div>
+          </div>
 
-            <button
+          {/* 2. CÁC THẺ CHUYÊN CẦN (6 STATS CARDS GRID - EQUAL HEIGHT H-24) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+            {/* Card 1: Sĩ số */}
+            <div
               onClick={() => navigate(`/app/classes/${selectedClass.id}/students`)}
-              className="w-full p-3 rounded-2xl bg-[#E6F9F3] border border-[#A3F0D9] text-left flex items-center justify-between transition-all hover:scale-[1.02] cursor-pointer"
+              className="clay-card p-3 space-y-1 bg-white border border-[#E1E6F0] rounded-2xl hover:border-[#6C63FF] transition-all cursor-pointer group flex flex-col justify-between h-24"
             >
-              <div>
-                <div className="text-xs font-extrabold text-[#0E8360]">Hồ sơ học sinh ({totalStudents} HS)</div>
-                <div className="text-[10px] text-[#68758D] font-bold mt-0.5">Xem lý lịch, SĐT phụ huynh & chụp ảnh</div>
-              </div>
-              <ArrowUpRight className="h-4 w-4 text-[#0E8360]" />
-            </button>
-
-            <button
-              onClick={() => navigate(`/app/classes/${selectedClass.id}/gradebook`)}
-              className="w-full p-3 rounded-2xl bg-[#FFF9EB] border border-[#FFE399] text-left flex items-center justify-between transition-all hover:scale-[1.02] cursor-pointer"
-            >
-              <div>
-                <div className="text-xs font-extrabold text-[#B47800]">Sổ điểm & Học tập</div>
-                <div className="text-[10px] text-[#68758D] font-bold mt-0.5">Nhập/xuất file điểm Tiếng Việt chuẩn</div>
-              </div>
-              <ArrowUpRight className="h-4 w-4 text-[#B47800]" />
-            </button>
-
-            <button
-              onClick={() => navigate(`/app/classes/${selectedClass.id}/leave-requests`)}
-              className="w-full p-3 rounded-2xl bg-[#FFEFEF] border border-[#FFC0C3] text-left flex items-center justify-between transition-all hover:scale-[1.02] cursor-pointer"
-            >
-              <div>
-                <div className="text-xs font-extrabold text-[#D32F2F]">Đơn xin nghỉ ({pendingLeaves} đơn)</div>
-                <div className="text-[10px] text-[#68758D] font-bold mt-0.5">Xét duyệt đơn nộp từ Phụ huynh</div>
-              </div>
-              <ArrowUpRight className="h-4 w-4 text-[#D32F2F]" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Subject Teachers Information Section */}
-      <div className="clay-card p-5 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E1E6F0] pb-3">
-          <div>
-            <h3 className="text-base font-extrabold text-[#18243A] flex items-center gap-2">
-              <BookOpen className="h-5 w-5 text-[#6C63FF]" />
-              Thông Tin Đội Ngũ Giáo Viên Phụ Trách Lớp {selectedClass.name}
-            </h3>
-            <p className="text-xs text-[#68758D] font-bold mt-0.5">
-              Danh sách Giáo viên Chủ nhiệm & Giáo viên Bộ môn trực tiếp giảng dạy tại lớp
-            </p>
-          </div>
-          <Badge variant="mint">Lớp {selectedClass.name} - Phòng {selectedClass.room}</Badge>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {/* Homeroom Teacher Card */}
-          <div className="p-3.5 rounded-2xl border border-[#C0BBFD] bg-gradient-to-br from-[#EEECFF] to-[#FAFBFF] space-y-1.5 shadow-2xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase text-[#6C63FF] bg-white px-2 py-0.5 rounded-md border border-[#C0BBFD]">
-                GV Chủ Nhiệm
-              </span>
-              <span className="w-2 h-2 rounded-full bg-[#22C997]"></span>
-            </div>
-            <div className="text-sm font-black text-[#18243A]">{selectedClass.homeroom_teacher_name || 'Chưa phân công'}</div>
-            <div className="text-[11px] text-[#68758D] font-bold flex items-center gap-1">
-              <Phone className="h-3 w-3 text-[#6C63FF]" /> 0912.345.678 (SĐT GVCN)
-            </div>
-          </div>
-
-          {/* Subject Teachers Cards */}
-          {[
-            { subject: 'Toán học', code: 'TOAN', teacher: 'ThS. Trần Đức Minh', phone: '0912.345.678' },
-            { subject: 'Ngữ văn', code: 'VVAN', teacher: 'Cô Nguyễn Thị Phương', phone: '0983.456.789' },
-            { subject: 'Tiếng Anh', code: 'TANG', teacher: 'ThS. Lê Hoàng Yến', phone: '0904.567.890' },
-            { subject: 'Vật lý', code: 'VLY', teacher: 'Thầy Phạm Quốc Huy', phone: '0935.678.901' },
-            { subject: 'Hóa học', code: 'HHOA', teacher: 'Cô Vũ Thị Thu Hương', phone: '0976.789.012' },
-            { subject: 'Sinh học', code: 'SHOC', teacher: 'Cô Hoàng Thị Mai', phone: '0917.890.123' },
-            { subject: 'Lịch sử & Địa lý', code: 'LS_DL', teacher: 'Thầy Ngô Văn Hải', phone: '0988.901.234' },
-          ].map((st, idx) => (
-            <div key={idx} className="p-3.5 rounded-2xl border border-[#E1E6F0] bg-white space-y-1.5 shadow-2xs hover:border-[#6C63FF]/50 transition-colors">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono font-bold text-[#68758D] bg-[#FAFBFF] px-1.5 py-0.5 rounded border border-[#E1E6F0]">
-                  GVBM - {st.code}
-                </span>
-                <span className="text-[10px] font-extrabold text-[#6C63FF]">{st.subject}</span>
+                <span className="text-[11px] font-extrabold text-[#68758D]">Sĩ số</span>
+                <div className="w-7 h-7 rounded-xl bg-[#EEECFF] text-[#6C63FF] flex items-center justify-center shrink-0">
+                  <Users className="h-3.5 w-3.5" />
+                </div>
               </div>
-              <div className="text-xs font-extrabold text-[#18243A]">{st.teacher}</div>
-              <div className="text-[11px] text-[#68758D] font-mono flex items-center gap-1">
-                <Phone className="h-3 w-3 text-[#22C997]" /> {st.phone}
+              <div>
+                <div className="text-xl font-black text-[#18243A] leading-none">{totalStudents}</div>
+                <div className="text-[10px] text-[#68758D] font-bold mt-1">Học sinh</div>
               </div>
             </div>
-          ))}
+
+            {/* Card 2: Có mặt */}
+            <div
+              onClick={() => navigate(`/app/classes/${selectedClass.id}/attendance`)}
+              className="clay-card p-3 space-y-1 bg-white border border-[#E1E6F0] rounded-2xl hover:border-[#22C997] transition-all cursor-pointer group flex flex-col justify-between h-24"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold text-[#68758D]">Có mặt</span>
+                <div className="w-7 h-7 rounded-xl bg-[#E6F9F3] text-[#0E8360] flex items-center justify-center shrink-0">
+                  <UserCheck className="h-3.5 w-3.5" />
+                </div>
+              </div>
+              <div>
+                <div className="text-xl font-black text-[#0E8360] leading-none">{presentCount}</div>
+                <div className="text-[10px] text-[#0E8360] font-bold mt-1">
+                  {totalStudents > 0 ? Math.round((presentCount / totalStudents) * 100) : 100}% sĩ số
+                </div>
+              </div>
+            </div>
+
+            {/* Card 3: Vắng có phép */}
+            <div
+              onClick={() => navigate(`/app/classes/${selectedClass.id}/attendance`)}
+              className="clay-card p-3 space-y-1 bg-white border border-[#E1E6F0] rounded-2xl hover:border-[#F6B73C] transition-all cursor-pointer group flex flex-col justify-between h-24"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold text-[#68758D]">Vắng có phép</span>
+                <div className="w-7 h-7 rounded-xl bg-[#FFF9EB] text-[#B47800] flex items-center justify-center shrink-0">
+                  <FileText className="h-3.5 w-3.5" />
+                </div>
+              </div>
+              <div>
+                <div className="text-xl font-black text-[#B47800] leading-none">{excusedCount}</div>
+                <div className="text-[10px] text-[#68758D] font-bold mt-1">
+                  {totalStudents > 0 ? Math.round((excusedCount / totalStudents) * 100) : 0}% sĩ số
+                </div>
+              </div>
+            </div>
+
+            {/* Card 4: Vắng không phép */}
+            <div
+              onClick={() => navigate(`/app/classes/${selectedClass.id}/attendance`)}
+              className="clay-card p-3 space-y-1 bg-white border border-[#E1E6F0] rounded-2xl hover:border-[#FF5D68] transition-all cursor-pointer group flex flex-col justify-between h-24"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold text-[#68758D]">Vắng K phép</span>
+                <div className="w-7 h-7 rounded-xl bg-[#FFEFEF] text-[#D32F2F] flex items-center justify-center shrink-0">
+                  <UserX className="h-3.5 w-3.5" />
+                </div>
+              </div>
+              <div>
+                <div className="text-xl font-black text-[#D32F2F] leading-none">{unexcusedCount}</div>
+                <div className="text-[10px] text-[#D32F2F] font-bold mt-1">
+                  {totalStudents > 0 ? Math.round((unexcusedCount / totalStudents) * 100) : 0}% sĩ số
+                </div>
+              </div>
+            </div>
+
+            {/* Card 5: Đi muộn */}
+            <div
+              onClick={() => navigate(`/app/classes/${selectedClass.id}/attendance`)}
+              className="clay-card p-3 space-y-1 bg-white border border-[#E1E6F0] rounded-2xl hover:border-[#6C63FF] transition-all cursor-pointer group flex flex-col justify-between h-24"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold text-[#68758D]">Đi muộn</span>
+                <div className="w-7 h-7 rounded-xl bg-[#EEECFF] text-[#6C63FF] flex items-center justify-center shrink-0">
+                  <Clock className="h-3.5 w-3.5" />
+                </div>
+              </div>
+              <div>
+                <div className="text-xl font-black text-[#6C63FF] leading-none">{lateCount}</div>
+                <div className="text-[10px] text-[#68758D] font-bold mt-1">
+                  {totalStudents > 0 ? Math.round((lateCount / totalStudents) * 100) : 0}% sĩ số
+                </div>
+              </div>
+            </div>
+
+            {/* Card 6: Đơn chờ duyệt */}
+            <div
+              onClick={() => navigate(`/app/classes/${selectedClass.id}/leave-requests`)}
+              className="clay-card p-3 space-y-1 bg-white border border-[#E1E6F0] rounded-2xl hover:border-[#6C63FF] transition-all cursor-pointer group flex flex-col justify-between h-24"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold text-[#68758D]">Đơn chờ duyệt</span>
+                <div className="w-7 h-7 rounded-xl bg-[#EEECFF] text-[#6C63FF] flex items-center justify-center shrink-0">
+                  <FileText className="h-3.5 w-3.5" />
+                </div>
+              </div>
+              <div>
+                <div className="text-xl font-black text-[#6C63FF] leading-none">{pendingLeaveRequestsCount}</div>
+                <div className="text-[10px] text-[#6C63FF] font-extrabold group-hover:underline mt-1">Xem chi tiết</div>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. VIỆC CẦN XỬ LÝ & XU HƯỚNG LỚP HỌC (2 SUB-PANELS GRID - EQUAL HEIGHT ITEMS-STRETCH) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+
+            {/* LEFT SUB-PANEL: VIỆC CẦN XỬ LÝ DỮ LIỆU THẬT */}
+            <div className="clay-card p-4 space-y-3 bg-white border border-[#E1E6F0] rounded-2xl flex flex-col justify-between h-full">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-[#E1E6F0] pb-2">
+                  <h2 className="text-sm font-extrabold text-[#18243A] flex items-center gap-1.5">
+                    <AlertTriangle className="h-4 w-4 text-[#FF5D68]" />
+                    Việc cần xử lý ({pendingTasksList.length})
+                  </h2>
+                  <Badge variant="warning">Thời gian thực</Badge>
+                </div>
+
+                {/* Task Items List */}
+                <div className="space-y-2 text-xs">
+                  {pendingTasksList.map((task) => (
+                    <div key={task.id} className="p-2.5 rounded-xl bg-[#FAFBFF] border border-[#E1E6F0] flex items-center justify-between gap-2 hover:border-[#6C63FF] transition-all">
+                      <div className="space-y-0.5 min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-[9px] font-black px-1.5 py-0.2 rounded border shrink-0 ${task.tagColor}`}>{task.priorityTag}</span>
+                          <span className="font-extrabold text-[#18243A] truncate text-[11px]">{task.title}</span>
+                        </div>
+                        <div className="text-[10px] text-[#68758D] font-bold truncate">{task.desc}</div>
+                      </div>
+                      <button
+                        onClick={() => navigate(task.targetUrl)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold border shrink-0 transition-colors cursor-pointer ${task.btnColor}`}
+                      >
+                        {task.btnLabel}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={() => navigate(`/app/classes/${selectedClass.id}/leave-requests`)}
+                className="text-xs font-extrabold text-[#6C63FF] hover:underline flex items-center gap-1 pt-2 border-t border-[#E1E6F0]"
+              >
+                Xem tất cả việc cần xử lý <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            {/* RIGHT SUB-PANEL: XU HƯỚNG LỚP HỌC 7 NGÀY */}
+            <div className="clay-card p-4 space-y-3 bg-white border border-[#E1E6F0] rounded-2xl flex flex-col justify-between h-full">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between border-b border-[#E1E6F0] pb-2">
+                  <h2 className="text-sm font-extrabold text-[#18243A] flex items-center gap-1.5">
+                    <TrendingUp className="h-4 w-4 text-[#6C63FF]" />
+                    Xu hướng lớp học 7 ngày
+                  </h2>
+                  <div className="text-[10px] font-bold text-[#68758D]">Lớp {selectedClass.name}</div>
+                </div>
+
+                {/* Combined Chart (ComposedChart) */}
+                <div className="h-44 w-full pt-1">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={trendData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                      <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#68758D', fontWeight: 700 }} axisLine={false} tickLine={false} />
+                      <YAxis yAxisId="left" domain={[0, 100]} tick={{ fontSize: 10, fill: '#68758D' }} axisLine={false} tickLine={false} />
+                      <YAxis yAxisId="right" orientation="right" domain={[0, 120]} tick={{ fontSize: 10, fill: '#68758D' }} axisLine={false} tickLine={false} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: '#18243A', borderRadius: '12px', border: 'none', color: '#fff', fontSize: '11px', fontWeight: 700 }}
+                      />
+                      <Bar yAxisId="left" dataKey="comat" name="Tỷ lệ có mặt (%)" fill="#A3F0D9" radius={[6, 6, 0, 0]} barSize={22} />
+                      <Line yAxisId="right" type="monotone" dataKey="muon" name="Số đi muộn (HS)" stroke="#6C63FF" strokeWidth={2.5} dot={{ r: 4, fill: '#6C63FF' }} />
+                      <Line yAxisId="right" type="monotone" dataKey="thidua" name="Điểm thi đua (điểm)" stroke="#F6B73C" strokeWidth={2} dot={{ r: 3, fill: '#F6B73C' }} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Auto Remark Box */}
+              <div className="p-2.5 rounded-xl bg-[#E6F9F3] border border-[#A3F0D9] text-[11px] font-bold text-[#0E8360] flex items-center gap-2">
+                <span className="text-base shrink-0">💡</span>
+                <span>
+                  <strong>Nhận xét tự động:</strong> Tỷ lệ có mặt đạt {Math.round((presentCount / (totalStudents || 1)) * 100)}%. Nề nếp Lớp {selectedClass.name} duy trì ổn định.
+                </span>
+              </div>
+            </div>
+
+          </div>
+
+          {/* 4. THI ĐUA VÀ TIẾN BỘ (3 SUB-PANELS GRID - EQUAL HEIGHT ITEMS-STRETCH) */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
+
+            {/* Panel 1: Xếp hạng thi đua - DỮ LIỆU THẬT */}
+            <div className="clay-card p-4 bg-white border border-[#E1E6F0] rounded-2xl flex flex-col justify-between h-full">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-[#E1E6F0] pb-2">
+                  <h3 className="text-xs font-extrabold text-[#18243A]">Xếp hạng thi đua</h3>
+                  {groupRankings.length > 0 ? (
+                    <span className="text-xs font-black text-[#F6B73C]">🏆 Dẫn đầu: {groupRankings[0].group_name}</span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-[#68758D]">Chưa có dữ liệu</span>
+                  )}
+                </div>
+
+                {groupRankings.length > 0 ? (
+                  <div className="space-y-1.5 text-xs font-bold">
+                    {groupRankings.map((g, idx) => (
+                      <div
+                        key={g.group_name}
+                        className={`p-2 rounded-xl flex items-center justify-between ${
+                          idx === 0 ? 'bg-[#FFF9EB] border border-[#FFE399]' : 'bg-[#FAFBFF] border border-[#E1E6F0]'
+                        }`}
+                      >
+                        <span className={`flex items-center gap-2 font-black ${idx === 0 ? 'text-[#18243A]' : 'text-[#68758D]'}`}>
+                          <span className="text-sm">{idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`}</span>
+                          {g.group_name}
+                        </span>
+                        <span className={`font-black ${idx === 0 ? 'text-[#B47800]' : 'text-[#68758D]'}`}>
+                          {g.totalPoints} điểm {idx === 0 ? '🏆' : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-4 text-[11px] text-[#68758D] font-bold">
+                    <div className="text-2xl mb-2">🏆</div>
+                    Chưa có sự kiện thi đua nào được ghi nhận.
+                    <button onClick={() => navigate(`/app/classes/${selectedClass.id}/conduct`)} className="block mt-2 text-[#6C63FF] hover:underline font-extrabold mx-auto">Ghi nhận ngay →</button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Panel 2: Mục tiêu tuần - DỮ LIỆU THẬT */}
+            <div className="clay-card p-4 bg-white border border-[#E1E6F0] rounded-2xl flex flex-col justify-between h-full">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-[#E1E6F0] pb-2">
+                  <h3 className="text-xs font-extrabold text-[#18243A]">Mục tiêu nề nếp hôm nay</h3>
+                  <Badge variant={weeklyGoalPct === 100 ? 'mint' : weeklyGoalPct >= 50 ? 'warning' : 'neutral'}>
+                    {weeklyGoalPct === 100 ? 'Đạt tất cả' : `${weeklyGoals.score}/4 tiêu chí`}
+                  </Badge>
+                </div>
+
+                <div className="flex items-center gap-3 pt-1">
+                  {/* Circular Progress Gauge */}
+                  <div className="relative w-16 h-16 shrink-0 flex items-center justify-center">
+                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                      <path className="text-[#E1E6F0]" strokeWidth="3.5" stroke="currentColor" fill="none"
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      />
+                      <path
+                        className={weeklyGoalPct === 100 ? 'text-[#22C997]' : weeklyGoalPct >= 50 ? 'text-[#F6B73C]' : 'text-[#FF5D68]'}
+                        strokeDasharray={`${weeklyGoalPct}, 100`}
+                        strokeWidth="3.5" strokeLinecap="round" stroke="currentColor" fill="none"
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      />
+                    </svg>
+                    <div className="absolute text-center">
+                      <span className="text-xs font-black text-[#18243A]">{weeklyGoalPct}%</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1 text-[10px] font-extrabold text-[#18243A]">
+                    <div className={`flex items-center gap-1.5 ${weeklyGoals.attendanceOk ? 'text-[#0E8360]' : 'text-[#D32F2F]'}`}>
+                      <CheckCircle2 className={`h-3.5 w-3.5 ${weeklyGoals.attendanceOk ? 'text-[#22C997]' : 'text-[#FF5D68]'}`} />
+                      Chuyên cần ≥ 95%
+                      <span className="ml-auto font-mono">{totalStudents > 0 ? Math.round((presentCount/totalStudents)*100) : 0}%</span>
+                    </div>
+                    <div className={`flex items-center gap-1.5 ${weeklyGoals.lateOk ? 'text-[#0E8360]' : 'text-[#D32F2F]'}`}>
+                      <CheckCircle2 className={`h-3.5 w-3.5 ${weeklyGoals.lateOk ? 'text-[#22C997]' : 'text-[#FF5D68]'}`} />
+                      Đi muộn ≤ 5 lượt
+                      <span className="ml-auto font-mono">{lateCount} lượt</span>
+                    </div>
+                    <div className={`flex items-center gap-1.5 ${weeklyGoals.conductOk ? 'text-[#0E8360]' : 'text-[#68758D]'}`}>
+                      <CheckCircle2 className={`h-3.5 w-3.5 ${weeklyGoals.conductOk ? 'text-[#22C997]' : 'text-[#E1E6F0]'}`} />
+                      Ghi nhận thi đua
+                      <span className="ml-auto font-mono">{conductEvents.length} sự kiện</span>
+                    </div>
+                    <div className={`flex items-center gap-1.5 ${weeklyGoals.unexcusedOk ? 'text-[#0E8360]' : 'text-[#D32F2F]'}`}>
+                      <CheckCircle2 className={`h-3.5 w-3.5 ${weeklyGoals.unexcusedOk ? 'text-[#22C997]' : 'text-[#FF5D68]'}`} />
+                      Không vắng K phép
+                      <span className="ml-auto font-mono">{unexcusedCount} HS</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Panel 3: Học sinh tiến bộ - DỮ LIỆU THẬT từ conduct events */}
+            <div className="clay-card p-4 bg-white border border-[#E1E6F0] rounded-2xl flex flex-col justify-between h-full">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-[#E1E6F0] pb-2">
+                  <h3 className="text-xs font-extrabold text-[#18243A]">Học sinh điểm cao nhất</h3>
+                  <button onClick={() => navigate(`/app/classes/${selectedClass.id}/conduct`)} className="text-[10px] font-extrabold text-[#6C63FF] hover:underline">
+                    Xem tất cả
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {topProgressStudents.length > 0 ? topProgressStudents.map((st: any, idx: number) => (
+                    <div key={st.id || idx} className="flex items-center gap-2.5 p-2 rounded-xl bg-[#FAFBFF] border border-[#E1E6F0]">
+                      <UserAvatar name={st.full_name} size="xs" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-extrabold text-[#18243A] truncate">{st.full_name}</div>
+                        <div className="text-[10px] text-[#68758D] font-bold">
+                          {st.group_name || 'Chưa xếp tổ'} · <span className={`${st.pts > 0 ? 'text-[#0E8360]' : 'text-[#68758D]'}`}>{st.pts > 0 ? `+${st.pts}` : st.pts} điểm</span>
+                        </div>
+                      </div>
+                    </div>
+                  )) : (
+                    studentsList.slice(0, 3).map((st: any, idx: number) => (
+                      <div key={st.id || idx} className="flex items-center gap-2.5 p-2 rounded-xl bg-[#FAFBFF] border border-[#E1E6F0]">
+                        <UserAvatar name={st.full_name} size="xs" />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-extrabold text-[#18243A] truncate">{st.full_name}</div>
+                          <div className="text-[10px] text-[#68758D] font-bold">{st.group_name || 'Chưa xếp tổ'} · <span>0 điểm</span></div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  {studentsList.length === 0 && (
+                    <div className="text-xs text-[#68758D] italic text-center py-2">Chưa có học sinh trong lớp.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          {/* 5. HỌC TẬP VÀ RÈN LUYỆN (4 SMALL SUMMARY CARDS - EQUAL HEIGHT H-24) */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {/* Card 1: Điểm TB Lớp */}
+            <div
+              onClick={() => navigate(`/app/classes/${selectedClass.id}/gradebook`)}
+              className="clay-card p-3 bg-white border border-[#E1E6F0] rounded-2xl hover:border-[#6C63FF] transition-all cursor-pointer group flex flex-col justify-between h-24"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold text-[#68758D]">Điểm TB lớp</span>
+                <div className="w-7 h-7 rounded-xl bg-[#EEECFF] text-[#6C63FF] flex items-center justify-center shrink-0">
+                  <BookOpen className="h-3.5 w-3.5" />
+                </div>
+              </div>
+              <div>
+                <div className="text-xl font-black text-[#6C63FF] leading-none">
+                  {classAvgScore !== null ? classAvgScore : '—'}
+                  <span className="text-xs font-bold text-[#68758D]">/10</span>
+                </div>
+                <div className="text-[10px] text-[#68758D] font-bold mt-1">
+                  {classAvgScore !== null ? `${gradebookData.length} bản ghi điểm` : 'Chưa có dữ liệu điểm'}
+                </div>
+              </div>
+            </div>
+
+            {/* Card 2: HS tiến bộ */}
+            <div
+              onClick={() => navigate(`/app/classes/${selectedClass.id}/students`)}
+              className="clay-card p-3 bg-white border border-[#E1E6F0] rounded-2xl hover:border-[#22C997] transition-all cursor-pointer group flex flex-col justify-between h-24"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold text-[#68758D]">HS tiến bộ</span>
+                <div className="w-7 h-7 rounded-xl bg-[#E6F9F3] text-[#0E8360] flex items-center justify-center shrink-0">
+                  <Users className="h-3.5 w-3.5" />
+                </div>
+              </div>
+              <div>
+                <div className="text-xl font-black text-[#0E8360] leading-none">
+                  {conductEvents.length > 0 ? conductGoodCount : '—'}
+                  <span className="text-xs font-bold text-[#68758D]">/{totalStudents}</span>
+                </div>
+                <div className="text-[10px] text-[#0E8360] font-bold mt-1">
+                  {conductEvents.length > 0 ? `${totalStudents > 0 ? Math.round((conductGoodCount/totalStudents)*100) : 0}% đạt Tốt trở lên` : 'Chưa có dữ liệu thi đua'}
+                </div>
+              </div>
+            </div>
+
+            {/* Card 3: Môn cần chú ý */}
+            <div
+              onClick={() => navigate(`/app/classes/${selectedClass.id}/gradebook`)}
+              className="clay-card p-3 bg-white border border-[#E1E6F0] rounded-2xl hover:border-[#F6B73C] transition-all cursor-pointer group flex flex-col justify-between h-24"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold text-[#68758D]">Môn cần chú ý</span>
+                <div className="w-7 h-7 rounded-xl bg-[#FFF9EB] text-[#B47800] flex items-center justify-center shrink-0">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                </div>
+              </div>
+              <div>
+                <div className="text-base font-black text-[#B47800] truncate leading-none">
+                  {weakestSubject ? weakestSubject.name : (gradebookData.length === 0 ? 'Chưa có dữ liệu' : 'Đồng đều')}
+                </div>
+                <div className="text-[10px] text-[#68758D] font-bold mt-1">
+                  {weakestSubject ? `TB: ${Math.round(weakestSubject.avg * 10) / 10}/10` : ''}
+                </div>
+              </div>
+            </div>
+
+            {/* Card 4: Kết quả rèn luyện */}
+            <div
+              onClick={() => navigate(`/app/classes/${selectedClass.id}/conduct`)}
+              className="clay-card p-3 bg-white border border-[#E1E6F0] rounded-2xl hover:border-[#22C997] transition-all cursor-pointer group flex flex-col justify-between h-24"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold text-[#68758D]">Rèn luyện Tốt</span>
+                <div className="w-7 h-7 rounded-xl bg-[#E6F9F3] text-[#0E8360] flex items-center justify-center shrink-0">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                </div>
+              </div>
+              <div>
+                <div className="text-xl font-black text-[#0E8360] leading-none">
+                  {conductEvents.length > 0 ? conductGoodCount : '—'}
+                  <span className="text-xs font-bold text-[#68758D]">/{totalStudents}</span>
+                </div>
+                <div className="text-[10px] text-[#0E8360] font-bold mt-1">
+                  {conductEvents.length > 0 ? `${totalStudents > 0 ? Math.round((conductGoodCount/totalStudents)*100) : 0}% Đạt Tốt` : 'Chưa có dữ liệu'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 6. GIÁO VIÊN PHỤ TRÁCH LỚP (FOOTER COLLAPSIBLE BAR) */}
+          <div className="clay-card p-4 bg-white border border-[#E1E6F0] rounded-2xl space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-3">
+                <UserAvatar name={homeroomTeacherName} size="sm" />
+                <div>
+                  <div className="font-extrabold text-[#18243A] text-sm">{homeroomTeacherName}</div>
+                  <div className="text-[11px] text-[#6C63FF] font-bold">Giáo viên chủ nhiệm {selectedClass.name}</div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4 text-xs font-bold text-[#68758D]">
+                {(homeroomUserEmail || selectedClass.homeroom_teacher_name) && (
+                  <div>✉️ Email: <span className="text-[#18243A]">{homeroomUserEmail || `${(selectedClass.homeroom_teacher_name || '').toLowerCase().replace(/\s+/g, '').replace(/[àáạảãăắặẳẵâấậẩẫ]/g,'a').replace(/[èéẹẻẽêếệểễ]/g,'e').replace(/[ìíịỉĩ]/g,'i').replace(/[òóọỏõôốộổỗơớợởỡ]/g,'o').replace(/[ùúụủũưứựửữ]/g,'u').replace(/[ỳýỵỷỹ]/g,'y').replace(/[đ]/g,'d')}@school.edu.vn`}</span></div>
+                )}
+                <div>🕒 Giờ liên hệ: <span className="text-[#18243A]">Thứ 2 – Thứ 6: 07:00 – 17:00</span></div>
+                <button
+                  onClick={() => setIsTeachersExpanded(!isTeachersExpanded)}
+                  className="px-3 py-1 rounded-xl bg-[#EEECFF] text-[#6C63FF] font-extrabold hover:bg-[#DED9FF] transition-colors flex items-center gap-1 cursor-pointer ml-auto"
+                >
+                  {isTeachersExpanded ? <>Thu gọn <ChevronUp className="h-3.5 w-3.5" /></> : <>Mở rộng GVBM <ChevronDown className="h-3.5 w-3.5" /></>}
+                </button>
+              </div>
+            </div>
+
+            {/* Expandable Subject Teachers List */}
+            {isTeachersExpanded && (
+              <div className="pt-3 border-t border-[#E1E6F0] grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 text-xs font-bold animate-in fade-in">
+                {subjectTeachers.length > 0 ? subjectTeachers.slice(0, 6).map((st: any) => (
+                  <div key={st.id || st.code} className="p-2.5 rounded-xl bg-[#FAFBFF] border border-[#E1E6F0]">
+                    <div className="text-[#6C63FF] font-extrabold">{st.name || st.subject_name || 'Môn học'}</div>
+                    <div>GV: {st.teacher_name || 'Giáo viên bộ môn'}</div>
+                    <div className="text-[10px] text-[#68758D]">SĐT: {st.teacher_phone || st.phone || '0981234567'}</div>
+                  </div>
+                )) : (
+                  <>
+                    <div className="p-2.5 rounded-xl bg-[#FAFBFF] border border-[#E1E6F0]">
+                      <div className="text-[#6C63FF] font-extrabold">Toán học</div>
+                      <div>GV: Thầy Trần Đức Minh</div>
+                      <div className="text-[10px] text-[#68758D]">Email: tdminh@school.edu.vn</div>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-[#FAFBFF] border border-[#E1E6F0]">
+                      <div className="text-[#FF5D68] font-extrabold">Ngữ văn</div>
+                      <div>GV: Cô Nguyễn Thị Hương</div>
+                      <div className="text-[10px] text-[#68758D]">Email: nthuong@school.edu.vn</div>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-[#FAFBFF] border border-[#E1E6F0]">
+                      <div className="text-[#22C997] font-extrabold">Tiếng Anh</div>
+                      <div>GV: Cô Lê Hoàng Yến</div>
+                      <div className="text-[10px] text-[#68758D]">Email: lhyen@school.edu.vn</div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
         </div>
+
+        {/* ========================================================================= */}
+        {/* RIGHT SIDEBAR COLUMN (4 COLUMNS / ~32%) */}
+        {/* ========================================================================= */}
+        <div className="lg:col-span-4 space-y-5">
+
+          {/* 1. LỊCH HỌC HÔM NAY (TIMELINE COLUMN) */}
+          <div className="clay-card p-4 space-y-4 bg-white border border-[#E1E6F0] rounded-2xl">
+            <div className="flex items-center justify-between border-b border-[#E1E6F0] pb-2.5">
+              <h2 className="text-sm font-extrabold text-[#18243A] flex items-center gap-1.5">
+                <Calendar className="h-4 w-4 text-[#6C63FF]" />
+                Lịch học hôm nay
+              </h2>
+              <span className="text-[10px] font-black text-[#6C63FF] bg-[#EEECFF] px-2 py-0.5 rounded-md border border-[#C0BBFD]">
+                {selectedClass.name}
+              </span>
+            </div>
+
+            {/* Dynamic Timetable Timeline OR Empty State */}
+            {todayTimetableSlots.length > 0 ? (
+              <div className="space-y-3 relative before:absolute before:left-11 before:top-3 before:bottom-3 before:w-0.5 before:bg-[#E1E6F0]">
+                {todayTimetableSlots.map((slot: any, idx: number) => (
+                  <div key={slot.id || idx} className="flex items-start gap-3 relative z-10">
+                    <span className="text-[11px] font-mono font-black text-[#6C63FF] w-10 text-right pt-0.5 shrink-0">
+                      Tiết {slot.period}
+                    </span>
+                    <div className="w-2.5 h-2.5 rounded-full bg-[#6C63FF] ring-4 ring-[#EEECFF] mt-1.5 shrink-0"></div>
+                    <div className="p-3 rounded-2xl bg-[#FAFBFF] border border-[#E1E6F0] flex-1 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black text-[#18243A]">{slot.subject_name || slot.subject || 'Môn học'}</span>
+                        <span className="text-[10px] text-[#68758D] font-mono">Phòng {slot.room || selectedClass.room || '201'}</span>
+                      </div>
+                      <div className="text-[11px] text-[#475467] font-bold">GV: {slot.teacher_name || 'Giáo viên bộ môn'}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* CLEAN EMPTY STATE WHEN NO TIMETABLE IS SCHEDULED FOR THIS CLASS */
+              <div className="p-5 text-center space-y-3 bg-[#FAFBFF] border border-[#E1E6F0] rounded-2xl my-2">
+                <div className="w-12 h-12 rounded-2xl bg-[#EEECFF] border border-[#C0BBFD] text-[#6C63FF] flex items-center justify-center mx-auto shadow-2xs">
+                  <Calendar className="h-6 w-6" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-xs font-black text-[#18243A]">Chưa xếp thời khóa biểu</h3>
+                  <p className="text-[11px] text-[#68758D] font-bold leading-relaxed max-w-xs mx-auto">
+                    Lớp {selectedClass.name} chưa có lịch học nào được xếp. Vui lòng thiết lập thời khóa biểu cho lớp.
+                  </p>
+                </div>
+                <button
+                  onClick={() => navigate(`/app/classes/${selectedClass.id}/timetable`)}
+                  className="px-3.5 py-2 rounded-xl bg-[#6C63FF] hover:bg-[#5A50E6] text-white text-xs font-extrabold shadow-sm transition-all inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Xếp thời khóa biểu ngay
+                </button>
+              </div>
+            )}
+
+            <button
+              onClick={() => navigate(`/app/classes/${selectedClass.id}/timetable`)}
+              className="text-xs font-extrabold text-[#6C63FF] hover:underline flex items-center gap-1 pt-1 border-t border-[#E1E6F0] w-full justify-between"
+            >
+              <span>Xem thời khóa biểu đầy đủ</span>
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {/* 2. THÔNG BÁO & PHẢN HỒI PHỤ HUYNH DỮ LIỆU THẬT */}
+          <div className="clay-card p-4 space-y-3 bg-white border border-[#E1E6F0] rounded-2xl">
+            <div className="flex items-center justify-between border-b border-[#E1E6F0] pb-2.5">
+              <h2 className="text-sm font-extrabold text-[#18243A] flex items-center gap-1.5">
+                <MessageSquare className="h-4 w-4 text-[#6C63FF]" />
+                Thông báo & Phản hồi PHHS
+              </h2>
+            </div>
+
+            {/* Subtabs: Tất cả, Đã đọc, Chờ phản hồi */}
+            <div className="flex items-center gap-1 bg-[#FAFBFF] p-1 rounded-xl border border-[#E1E6F0] text-[11px] font-extrabold">
+              <button
+                onClick={() => setNotifTab('all')}
+                className={`flex-1 py-1 rounded-lg text-center transition-colors cursor-pointer ${notifTab === 'all' ? 'bg-[#6C63FF] text-white shadow-2xs' : 'text-[#68758D] hover:bg-[#EEECFF]'}`}
+              >
+                Tất cả ({classAnnouncements.length})
+              </button>
+              <button
+                onClick={() => setNotifTab('read')}
+                className={`flex-1 py-1 rounded-lg text-center transition-colors cursor-pointer ${notifTab === 'read' ? 'bg-[#6C63FF] text-white shadow-2xs' : 'text-[#68758D] hover:bg-[#EEECFF]'}`}
+              >
+                Đã đọc
+              </button>
+              <button
+                onClick={() => setNotifTab('pending')}
+                className={`flex-1 py-1 rounded-lg text-center transition-colors cursor-pointer ${notifTab === 'pending' ? 'bg-[#6C63FF] text-white shadow-2xs' : 'text-[#68758D] hover:bg-[#EEECFF]'}`}
+              >
+                Chờ phản hồi
+              </button>
+            </div>
+
+            {/* Notifications List - only real data */}
+            <div className="space-y-2">
+              {filteredNotifs.length > 0 ? filteredNotifs.map((n: any, idx: number) => (
+                <div key={n.id || idx} className="p-2.5 rounded-xl bg-[#FAFBFF] border border-[#E1E6F0] flex items-center justify-between gap-2 hover:border-[#6C63FF] transition-all">
+                  <div className="space-y-0.5 min-w-0">
+                    <div className="text-xs font-extrabold text-[#18243A] truncate">{n.title}</div>
+                    <div className="text-[10px] text-[#68758D] font-mono">{n.published_at || 'Hôm nay'}</div>
+                  </div>
+                  <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-md shrink-0 ${
+                    n.status === 'read' ? 'bg-[#E6F9F3] text-[#0E8360] border border-[#A3F0D9]' :
+                    n.status === 'responded' ? 'bg-[#EEECFF] text-[#6C63FF] border border-[#C0BBFD]' :
+                    'bg-[#FFF9EB] text-[#B47800] border border-[#FFE399]'
+                  }`}>
+                    {n.status === 'read' ? 'Đã đọc' : n.status === 'responded' ? 'Đã phản hồi' : 'Chờ phản hồi'}
+                  </span>
+                </div>
+              )) : (
+                <div className="text-center py-5 text-[11px] font-bold text-[#68758D] space-y-2">
+                  <div className="text-2xl">📭</div>
+                  <div>Chưa có thông báo nào cho lớp {selectedClass.name}.</div>
+                  <button onClick={() => navigate(`/app/classes/${selectedClass.id}/announcements`)} className="text-[#6C63FF] hover:underline font-extrabold">Tạo thông báo mới →</button>
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={() => navigate(`/app/classes/${selectedClass.id}/announcements`)}
+              className="text-xs font-extrabold text-[#6C63FF] hover:underline flex items-center gap-1 pt-1 border-t border-[#E1E6F0] w-full justify-between"
+            >
+              <span>Xem tất cả thông báo</span>
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {/* 3. LỊCH THI & SỰ KIỆN ĐẾM NGƯỢC WIDGET */}
+          <ExamCountdownWidget />
+
+        </div>
+
       </div>
+
     </div>
   );
 };

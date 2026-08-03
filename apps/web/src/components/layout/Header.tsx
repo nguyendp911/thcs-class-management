@@ -14,7 +14,7 @@ export const Header: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const {
-    currentUser, currentRole, isSuperAdmin, selectedSchoolYear, setSelectedSchoolYear,
+    currentUser, currentRole, switchUserRole, isSuperAdmin, selectedSchoolYear, setSelectedSchoolYear,
     selectedSemester, setSelectedSemester, selectedClass, setSelectedClass, classesList, permittedClasses, studentsList, logout,
     updateUserPassword, getUserPassword
   } = useAuth();
@@ -23,11 +23,13 @@ export const Header: React.FC = () => {
 
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showRoleMenu, setShowRoleMenu] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Refs for auto-closing dropdowns when clicking outside
   const userMenuRef = useRef<HTMLDivElement>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
+  const roleMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -36,6 +38,9 @@ export const Header: React.FC = () => {
       }
       if (notificationsRef.current && !notificationsRef.current.contains(event.target as Node)) {
         setShowNotifications(false);
+      }
+      if (roleMenuRef.current && !roleMenuRef.current.contains(event.target as Node)) {
+        setShowRoleMenu(false);
       }
     };
 
@@ -493,25 +498,97 @@ export const Header: React.FC = () => {
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}
           </select>
+
+          {/* Date & Academic Week Badge */}
+          <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#FAFBFF] border border-[#E1E6F0] text-xs font-extrabold text-[#18243A]">
+            <i className="fa-regular fa-calendar text-[#6C63FF]"></i>
+            <span>Thứ Hai, 12/05/2025</span>
+            <span className="px-2 py-0.5 rounded-lg bg-[#EEECFF] text-[#6C63FF] font-black border border-[#C0BBFD]">Tuần 1</span>
+          </div>
         </div>
       </div>
 
       {/* Right Flex Group: Fixed Account Role Badge + Notifications + User Profile */}
       <div className="flex items-center gap-2 md:gap-3 shrink-0">
-        {/* AI Educator Assistant Button */}
-        <button
-          onClick={() => setIsAIModalOpen(true)}
-          className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#EEECFF] to-[#FAFBFF] border border-[#C0BBFD] text-xs font-black text-[#6C63FF] hover:bg-[#DED9FF] transition-all cursor-pointer shadow-2xs"
-          title="Mở Trợ lý AI Sinh nhận xét & Đề thi"
-        >
-          <i className="fa-solid fa-wand-magic-sparkles text-amber-500"></i>
-          <span>🤖 AI Trợ lý</span>
-        </button>
+        {/* RBAC Role View Switcher Menu Dropdown */}
+        <div ref={roleMenuRef} className="relative shrink-0">
+          <button
+            onClick={() => { setShowRoleMenu(!showRoleMenu); setShowNotifications(false); setShowUserMenu(false); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#EEECFF] border border-[#C0BBFD] text-xs font-black text-[#6C63FF] hover:bg-[#DED9FF] transition-all cursor-pointer shadow-2xs"
+            title="Chuyển đổi góc nhìn phân quyền ứng dụng"
+          >
+            <span>
+              {currentRole === 'superadmin' && '👑 SuperAdmin'}
+              {currentRole === 'homeroom_teacher' && '👨‍🏫 GV Chủ Nhiệm'}
+              {currentRole === 'subject_teacher' && '📚 GV Bộ Môn'}
+              {currentRole === 'parent' && '👨‍👩‍👧 Phụ Huynh'}
+              {currentRole === 'student' && '🎓 Học Sinh'}
+              {currentRole === 'standard_user' && '👤 Người dùng'}
+            </span>
+            <i className={`fa-solid fa-chevron-down text-[10px] transition-transform ${showRoleMenu ? 'rotate-180' : ''}`}></i>
+          </button>
 
-        {/* Fixed Active Account Role Badge */}
-        <div className="hidden sm:flex items-center shrink-0">
-          <RoleBadge role={currentRole} size="md" showIcon={true} />
+          {/* Role Switcher Menu Popup */}
+          {showRoleMenu && (
+            <div className="absolute right-0 mt-2 w-56 rounded-2xl border border-[#E1E6F0] bg-white p-2 shadow-[0_16px_36px_rgba(24,36,58,0.14)] z-50 animate-in fade-in space-y-1">
+              <div className="text-[10px] font-extrabold text-[#68758D] uppercase px-3 py-1 border-b border-[#F1F5F9]">
+                🎭 Chuyển Góc Nhìn Vai Trò
+              </div>
+
+              <button
+                onClick={() => { switchUserRole('superadmin'); setShowRoleMenu(false); navigate('/app/admin'); }}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-extrabold transition-colors ${
+                  currentRole === 'superadmin' ? 'bg-[#EEECFF] text-[#6C63FF]' : 'text-[#18243A] hover:bg-[#FAFBFF]'
+                }`}
+              >
+                <span>👑 SuperAdmin Hệ Thống</span>
+                {currentRole === 'superadmin' && <i className="fa-solid fa-check text-xs"></i>}
+              </button>
+
+              <button
+                onClick={() => { switchUserRole('homeroom_teacher'); setShowRoleMenu(false); navigate('/app/dashboard'); }}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-extrabold transition-colors ${
+                  currentRole === 'homeroom_teacher' ? 'bg-[#E6F9F3] text-[#0E8360]' : 'text-[#18243A] hover:bg-[#FAFBFF]'
+                }`}
+              >
+                <span>👨‍🏫 Giáo Viên Chủ Nhiệm</span>
+                {currentRole === 'homeroom_teacher' && <i className="fa-solid fa-check text-xs"></i>}
+              </button>
+
+              <button
+                onClick={() => { switchUserRole('subject_teacher'); setShowRoleMenu(false); navigate(`/app/classes/${selectedClass?.id || 0}/gradebook`); }}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-extrabold transition-colors ${
+                  currentRole === 'subject_teacher' ? 'bg-[#FFF9EB] text-[#B47800]' : 'text-[#18243A] hover:bg-[#FAFBFF]'
+                }`}
+              >
+                <span>📚 Giáo Viên Bộ Môn</span>
+                {currentRole === 'subject_teacher' && <i className="fa-solid fa-check text-xs"></i>}
+              </button>
+
+              <button
+                onClick={() => { switchUserRole('parent'); setShowRoleMenu(false); navigate('/app/dashboard'); }}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-extrabold transition-colors ${
+                  currentRole === 'parent' ? 'bg-[#FFEFEF] text-[#FF5D68]' : 'text-[#18243A] hover:bg-[#FAFBFF]'
+                }`}
+              >
+                <span>👨‍👩‍👧 Phụ Huynh Học Sinh</span>
+                {currentRole === 'parent' && <i className="fa-solid fa-check text-xs"></i>}
+              </button>
+
+              <button
+                onClick={() => { switchUserRole('student'); setShowRoleMenu(false); navigate('/app/dashboard'); }}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-extrabold transition-colors ${
+                  currentRole === 'student' ? 'bg-[#EEECFF] text-[#6C63FF]' : 'text-[#18243A] hover:bg-[#FAFBFF]'
+                }`}
+              >
+                <span>🎓 Học Sinh Cá Nhân</span>
+                {currentRole === 'student' && <i className="fa-solid fa-check text-xs"></i>}
+              </button>
+            </div>
+          )}
         </div>
+
+
 
         {/* Notifications Bell */}
         <div ref={notificationsRef} className="relative shrink-0">

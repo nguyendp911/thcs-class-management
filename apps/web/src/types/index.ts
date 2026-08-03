@@ -17,6 +17,7 @@ export interface User {
   class_id?: number;
   class_ids?: number[];
   class_name?: string;
+  scopes?: Array<{ class_id: string; class_name: string; scope_type: string }>;
   activation_request?: {
     target_role: RoleType;
     status: 'pending' | 'approved' | 'rejected';

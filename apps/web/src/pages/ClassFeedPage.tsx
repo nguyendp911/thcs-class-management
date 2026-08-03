@@ -575,7 +575,7 @@ export const ClassFeedPage: React.FC = () => {
                           {post.author_name}
                           <Badge variant="purple">{post.author_role}</Badge>
                         </div>
-                        <div className="text-xs text-[#68758D] font-mono mt-0.5">{post.created_at} • Công khai Lớp 7A1</div>
+                        <div className="text-xs text-[#68758D] font-mono mt-0.5">{post.created_at} • Công khai {selectedClass?.name || 'Lớp học'}</div>
                       </div>
                     </div>
 

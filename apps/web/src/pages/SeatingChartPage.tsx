@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { saveToDb } from '../lib/dbSync';
 import { Button } from '../components/ui/Button';
 import { UserAvatar } from '../components/ui/UserAvatar';
-import { Table, Sparkles, RefreshCw, Printer } from 'lucide-react';
+import { Table, Sparkles, RefreshCw, Printer, Move } from 'lucide-react';
 
 interface Seat {
   id: string; // e.g. "R1-C1-S1"
@@ -23,6 +23,10 @@ export const SeatingChartPage: React.FC = () => {
   const [seats, setSeats] = useState<Seat[]>([]);
   const [selectedSeat, setSelectedSeat] = useState<Seat | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Drag and Drop State
+  const [draggedSeatId, setDraggedSeatId] = useState<string | null>(null);
+  const [dragOverSeatId, setDragOverSeatId] = useState<string | null>(null);
 
   // Initialize 4 rows x 4 cols x 2 seats = 32 seats
   useEffect(() => {
@@ -67,6 +71,61 @@ export const SeatingChartPage: React.FC = () => {
   const saveSeatingChart = (newSeats: Seat[]) => {
     setSeats(newSeats);
     saveToDb(`thcs_seating_chart_class_${classId}`, newSeats);
+  };
+
+  // Drag & Drop Handlers
+  const handleDragStart = (e: React.DragEvent, seatId: string) => {
+    setDraggedSeatId(seatId);
+    e.dataTransfer.setData('text/plain', seatId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, seatId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverSeatId !== seatId) {
+      setDragOverSeatId(seatId);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverSeatId(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetSeatId: string) => {
+    e.preventDefault();
+    setDragOverSeatId(null);
+
+    const sourceSeatId = e.dataTransfer.getData('text/plain') || draggedSeatId;
+    if (!sourceSeatId || sourceSeatId === targetSeatId) return;
+
+    const sourceSeat = seats.find(s => s.id === sourceSeatId);
+    const targetSeat = seats.find(s => s.id === targetSeatId);
+
+    if (!sourceSeat || !targetSeat) return;
+
+    // Swap student names and IDs between source and target seats
+    const updated = seats.map(s => {
+      if (s.id === sourceSeatId) {
+        return {
+          ...s,
+          studentId: targetSeat.studentId,
+          studentName: targetSeat.studentName,
+        };
+      }
+      if (s.id === targetSeatId) {
+        return {
+          ...s,
+          studentId: sourceSeat.studentId,
+          studentName: sourceSeat.studentName,
+        };
+      }
+      return s;
+    });
+
+    saveSeatingChart(updated);
+    showToast(`🔄 Đã hoán đổi chỗ ngồi giữa "${sourceSeat.studentName || 'Chỗ trống'}" và "${targetSeat.studentName || 'Chỗ trống'}"!`);
+    setDraggedSeatId(null);
   };
 
   const handleAssignStudent = (seatId: string, studentName: string) => {
@@ -126,12 +185,12 @@ export const SeatingChartPage: React.FC = () => {
       {/* Header & Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-[#18243A] sm:text-3xl tracking-tight flex items-center gap-2">
-            <Table className="h-7 w-7 text-[#6C63FF]" />
+          <h2 className="text-xl font-extrabold text-[#18243A] sm:text-2xl tracking-tight flex items-center gap-2">
+            <Table className="h-6 w-6 text-[#6C63FF]" />
             Sơ Đồ Chỗ Ngồi Lớp Học 2D ({className})
-          </h1>
-          <p className="text-xs text-[#68758D] font-bold mt-1">
-            Quản lý sơ đồ vị trí chỗ ngồi trực quan, xếp chỗ cho học sinh cận thị và theo dõi cặp đôi học tập
+          </h2>
+          <p className="text-xs text-[#68758D] font-bold mt-1 flex items-center gap-1.5">
+            <Move className="h-3.5 w-3.5 text-[#6C63FF]" /> Kéo thả thẻ chỗ ngồi để hoán đổi vị trí học sinh trực tiếp!
           </p>
         </div>
 
@@ -176,31 +235,46 @@ export const SeatingChartPage: React.FC = () => {
                       <span className="font-mono text-[#6C63FF]">Bàn {r}.{c}</span>
                     </div>
 
-                    {/* 2 Seats per Desk */}
+                    {/* 2 Seats per Desk with HTML5 Drag and Drop */}
                     <div className="grid grid-cols-2 gap-2">
-                      {deskSeats.map(seat => (
-                        <div
-                          key={seat.id}
-                          onClick={() => setSelectedSeat(seat)}
-                          className={`p-2.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between space-y-2 ${
-                            seat.studentName
-                              ? 'bg-white border-[#C0BBFD] hover:bg-[#EEECFF]/60 shadow-2xs'
-                              : 'bg-[#F1F5F9] border-dashed border-[#CBD5E1] hover:bg-white'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-1">
-                            <UserAvatar name={seat.studentName || 'Chỗ trống'} size="xs" />
-                            {getTagBadge(seat.tag)}
-                          </div>
+                      {deskSeats.map(seat => {
+                        const isDragging = draggedSeatId === seat.id;
+                        const isDragOver = dragOverSeatId === seat.id;
 
-                          <div className="min-w-0">
-                            <div className="text-xs font-extrabold text-[#18243A] truncate">
-                              {seat.studentName || <span className="text-[#94A3B8] font-normal italic">+ Chọn HS</span>}
+                        return (
+                          <div
+                            key={seat.id}
+                            draggable={Boolean(seat.studentName)}
+                            onDragStart={(e) => handleDragStart(e, seat.id)}
+                            onDragOver={(e) => handleDragOver(e, seat.id)}
+                            onDragLeave={handleDragLeave}
+                            onDrop={(e) => handleDrop(e, seat.id)}
+                            onClick={() => setSelectedSeat(seat)}
+                            className={`p-2.5 rounded-2xl border transition-all cursor-grab active:cursor-grabbing flex flex-col justify-between space-y-2 select-none ${
+                              isDragging
+                                ? 'opacity-40 border-dashed border-[#6C63FF] bg-[#EEECFF]'
+                                : isDragOver
+                                ? 'bg-[#EEECFF] border-[#6C63FF] scale-[1.05] shadow-md ring-2 ring-[#6C63FF]'
+                                : seat.studentName
+                                ? 'bg-white border-[#C0BBFD] hover:bg-[#EEECFF]/60 shadow-2xs hover:scale-[1.02]'
+                                : 'bg-[#F1F5F9] border-dashed border-[#CBD5E1] hover:bg-white'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1">
+                              <UserAvatar name={seat.studentName || 'Chỗ trống'} size="xs" />
+                              {getTagBadge(seat.tag)}
                             </div>
-                            <div className="text-[10px] text-[#68758D] font-mono mt-0.5">Ghế {seat.seatNum}</div>
+
+                            <div className="min-w-0">
+                              <div className="text-xs font-extrabold text-[#18243A] truncate flex items-center justify-between gap-1">
+                                <span className="truncate">{seat.studentName || <span className="text-[#94A3B8] font-normal italic">+ Thêm HS</span>}</span>
+                                {seat.studentName && <Move className="h-3 w-3 text-[#6C63FF] shrink-0 opacity-60" />}
+                              </div>
+                              <div className="text-[10px] text-[#68758D] font-mono mt-0.5">Ghế {seat.seatNum}</div>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 );

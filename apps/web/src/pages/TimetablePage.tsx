@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { mockTimetable as initialTimetable, mockLessonLogs as initialLogs } from '../lib/mockData';
-import { saveToDb, syncAllFromDb } from '../lib/dbSync';
+import { saveToDb } from '../lib/dbSync';
 import type { TimetableEntry, LessonLog, TeacherLessonEvaluation } from '../types';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
@@ -136,30 +136,37 @@ export const TimetablePage: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // Load Timetable, Logs & Subjects directly from MySQL API on mount
+  // Load Timetable, Logs & Subjects scoped by selectedClass.id
   useEffect(() => {
-    const loadData = async () => {
-      // Load teacher evaluations from DB
-      syncAllFromDb().then(data => {
-        if (data) {
-          if (data.thcs_teacher_evaluations && Array.isArray(data.thcs_teacher_evaluations)) {
-            setTeacherEvaluations(data.thcs_teacher_evaluations);
-          }
-          if (data.thcs_subject_list && Array.isArray(data.thcs_subject_list) && data.thcs_subject_list.length > 0) {
-            const merged = data.thcs_subject_list.map((dbSub: any) => {
-              const def = DEFAULT_SUBJECTS.find(s => s.code === dbSub.code || s.id === dbSub.id);
-              return {
-                ...dbSub,
-                teacher_phone: dbSub.teacher_phone || (def ? def.teacher_phone : ''),
-              };
-            });
-            setSubjectList(merged);
-          }
-        }
-      });
+    if (!selectedClass || !selectedClass.id) return;
+    const classId = selectedClass.id;
 
+    const loadData = async () => {
+      // 1. Try reading class-specific timetable from LocalStorage
       try {
-        const response = await fetch('/thcs/api/timetable');
+        const savedTt = localStorage.getItem(`thcs_timetable_class_${classId}`);
+        if (savedTt) {
+          setTimetable(JSON.parse(savedTt));
+        } else {
+          // Generate unique timetable for class if no saved timetable
+          const classSpecific = initialTimetable.map(t => ({
+            ...t,
+            class_id: classId,
+          }));
+          setTimetable(classSpecific);
+        }
+
+        const savedSubs = localStorage.getItem(`thcs_subject_list_class_${classId}`);
+        if (savedSubs) {
+          setSubjectList(JSON.parse(savedSubs));
+        } else {
+          setSubjectList(DEFAULT_SUBJECTS);
+        }
+      } catch (e) {}
+
+      // 2. Fetch from backend API
+      try {
+        const response = await fetch(`/thcs/api/timetable?class_id=${classId}`);
         if (response.ok) {
           const data = await response.json();
           if (data.timetable && Array.isArray(data.timetable) && data.timetable.length > 0) {
@@ -173,35 +180,26 @@ export const TimetablePage: React.FC = () => {
           }
         }
       } catch (err) {}
-
-      try {
-        const resLog = await fetch('/thcs/api/lesson-logs');
-        if (resLog.ok) {
-          const dataLog = await resLog.json();
-          if (dataLog.logs && Array.isArray(dataLog.logs) && dataLog.logs.length > 0) {
-            setLessonLogs(dataLog.logs);
-          }
-        }
-      } catch (err) {}
     };
 
     loadData();
-  }, []);
+  }, [selectedClass?.id]);
 
   const saveSubjectsState = (updated: CustomSubject[]) => {
     setSubjectList(updated);
-    saveToDb('thcs_subject_list', updated);
+    saveToDb(`thcs_subject_list_class_${selectedClass?.id || 0}`, updated);
   };
 
   const saveTimetableState = async (newTimetable: TimetableEntry[]) => {
     setTimetable(newTimetable);
+    saveToDb(`thcs_timetable_class_${selectedClass?.id || 0}`, newTimetable);
     try {
       await fetch('/thcs/api/timetable', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ timetable: newTimetable }),
+        body: JSON.stringify({ class_id: selectedClass?.id, timetable: newTimetable }),
       });
-    } catch (e) {}
+    } catch (err) {}
   };
 
   const saveLessonLogsState = async (newLogs: LessonLog[]) => {

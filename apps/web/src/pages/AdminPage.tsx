@@ -10,7 +10,7 @@ import { Modal } from '../components/ui/Modal';
 import { RoleBadge } from '../components/ui/RoleBadge';
 import { UserAvatar } from '../components/ui/UserAvatar';
 import {
-  Plus, CheckCircle, Lock, Users, School, Key, Crown, Database, Download, Trash2, AlertTriangle, ShieldCheck, Edit, Check, UserCheck, BookOpen
+  Plus, CheckCircle, Lock, Users, School, Key, Crown, Database, Download, Trash2, AlertTriangle, ShieldCheck, Edit, Check, UserCheck, BookOpen, UserPlus
 } from 'lucide-react';
 
 export interface SubjectTeacherItem {
@@ -60,7 +60,7 @@ const AVAILABLE_PERMISSIONS: PermissionMeta[] = [
 ];
 
 export const AdminPage: React.FC = () => {
-  const { currentRole, updateUserPassword, setSelectedClass, updateClass, addClass, deleteClass, classesList } = useAuth();
+  const { currentRole, updateUserPassword, selectedClass, setSelectedClass, updateClass, addClass, deleteClass, classesList, studentsList } = useAuth();
   const [activeTab, setActiveTab] = useState<'classes' | 'subject_teachers' | 'rbac' | 'users' | 'activations' | 'database'>('classes');
 
   // Subject Teachers State
@@ -119,12 +119,74 @@ export const AdminPage: React.FC = () => {
   const [editClassTeacherInput, setEditClassTeacherInput] = useState('');
   const [editClassCapacityInput, setEditClassCapacityInput] = useState('45');
 
+  // New User Form State
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPhone, setNewUserPhone] = useState('');
-  const [newUserRole, setNewUserRole] = useState<any>('homeroom_teacher');
-  const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserRole, setNewUserRole] = useState<any>('student');
+  const [newUserPassword, setNewUserPassword] = useState('123456');
+  const [newUserClassId, setNewUserClassId] = useState<string>(selectedClass?.id ? String(selectedClass.id) : '1');
+
+  // Bulk generate accounts for all students and parents of selected class
+  const handleBulkCreateAccounts = () => {
+    if (!studentsList || studentsList.length === 0) {
+      alert('Chưa có danh sách học sinh để cấp tài khoản đồng loạt.');
+      return;
+    }
+
+    const newAccounts: User[] = [];
+    let count = 0;
+
+    studentsList.forEach((st) => {
+      const studentUsername = generateUsername(st.full_name, 'HS');
+      const parentName = st.primary_guardian_name || `Phụ huynh ${st.full_name}`;
+      const parentUsername = generateUsername(parentName, 'PHHS');
+      const targetClassId = st.class_id || selectedClass?.id || '1';
+
+      // 1. Student Account
+      const stUser: User = {
+        id: Date.now() + Math.floor(Math.random() * 10000),
+        public_id: `USR-${Date.now().toString().slice(-4)}-${count}`,
+        name: st.full_name,
+        email: `${studentUsername.toLowerCase()}@school.edu.vn`,
+        username: studentUsername,
+        role: 'student',
+        phone: st.primary_guardian_phone || '0901234567',
+        status: 'active',
+        scopes: [{ class_id: String(targetClassId), class_name: st.class_name || selectedClass?.name || 'Lớp học', scope_type: 'student' }],
+      };
+      updateUserPassword(stUser.id, '123456');
+      newAccounts.push(stUser);
+
+      // 2. Parent Account
+      const prUser: User = {
+        id: Date.now() + Math.floor(Math.random() * 10000) + 1,
+        public_id: `USR-${Date.now().toString().slice(-4)}-P${count}`,
+        name: parentName,
+        email: `${parentUsername.toLowerCase()}@school.edu.vn`,
+        username: parentUsername,
+        role: 'parent',
+        phone: st.primary_guardian_phone || '0901234567',
+        status: 'active',
+        scopes: [{ class_id: String(targetClassId), class_name: st.class_name || selectedClass?.name || 'Lớp học', scope_type: 'parent' }],
+      };
+      updateUserPassword(prUser.id, '123456');
+      newAccounts.push(prUser);
+      count++;
+    });
+
+    saveUsersListState([...newAccounts, ...userList]);
+
+    // Sync API
+    fetch('/thcs/api/system-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'thcs_admin_users', value: [...newAccounts, ...userList] }),
+    }).catch(() => {});
+
+    showToast(`🎉 Đã cấp tự động ${newAccounts.length} tài khoản đồng loạt cho Học sinh & Phụ huynh Lớp ${selectedClass?.name}! Mật khẩu mặc định: 123456`);
+  };
 
   // Edit User Account Modal State
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -141,6 +203,45 @@ export const AdminPage: React.FC = () => {
   // Reset Password for specific user modal
   const [selectedUserForPass, setSelectedUserForPass] = useState<User | null>(null);
   const [adminSetPasswordInput, setAdminSetPasswordInput] = useState('');
+
+  // Bulk Selection State for Users
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(new Set());
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
+
+  const toggleSelectUser = (id: number) => {
+    setSelectedUserIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectableUsers = userList.filter(u => u.role !== 'superadmin');
+
+  const isAllSelected = selectableUsers.length > 0 && selectedUserIds.size === selectableUsers.length;
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedUserIds(new Set());
+    } else {
+      setSelectedUserIds(new Set(selectableUsers.map(u => u.id)));
+    }
+  };
+
+  const handleBulkDeleteUsers = () => {
+    if (selectedUserIds.size === 0) return;
+    setIsBulkDeleteModalOpen(true);
+  };
+
+  const confirmBulkDeleteUsers = () => {
+    const toDelete = Array.from(selectedUserIds);
+    const updated = userList.filter(u => !toDelete.includes(u.id) || u.role === 'superadmin');
+    saveUsersListState(updated);
+    setSelectedUserIds(new Set());
+    setIsBulkDeleteModalOpen(false);
+    showToast(`🗑️ Đã xóa thành công ${toDelete.length} tài khoản khỏi hệ thống!`);
+  };
 
   // Fetch latest users from MySQL users API on mount
   useEffect(() => {
@@ -308,6 +409,7 @@ export const AdminPage: React.FC = () => {
       phone: newUserPhone.trim() || '0901234567',
       status: 'active',
       must_change_password: false,
+      scopes: [{ class_id: String(newUserClassId), class_name: classesList.find(c => String(c.id) === String(newUserClassId))?.name || 'Lớp học', scope_type: newUserRole }],
       activation_request: {
         target_role: newUserRole,
         status: 'approved' as const,
@@ -822,15 +924,59 @@ export const AdminPage: React.FC = () => {
       {/* Tab 3: User Accounts */}
       {activeTab === 'users' && (
         <div className="clay-card p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-extrabold text-[#18243A]">Quản Lý Tài Khoản Đăng Nhập</h2>
-            <Badge variant="mint">Tổng số: {userList.length} tài khoản</Badge>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E1E6F0] pb-3">
+            <div>
+              <h2 className="text-base font-extrabold text-[#18243A]">Quản Lý Tài Khoản Đăng Nhập</h2>
+              <p className="text-xs text-[#68758D] font-bold">Cấp tài khoản cá nhân cho GVCN, GVBM, Học Sinh & Phụ Huynh theo lớp</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="mint" onClick={handleBulkCreateAccounts} icon={<UserCheck className="h-4 w-4" />}>
+                ⚡ Cấp Tài Khoản Đồng Loạt (Lớp {selectedClass?.name})
+              </Button>
+              <Button size="sm" variant="primary" onClick={() => setIsAddUserModalOpen(true)} icon={<UserPlus className="h-4 w-4" />}>
+                Tạo Tài Khoản Mới
+              </Button>
+            </div>
           </div>
+
+          {/* Bulk Action Toolbar */}
+          {selectedUserIds.size > 0 && (
+            <div className="flex items-center justify-between px-4 py-2.5 rounded-2xl bg-[#FFEFEF] border border-[#FFC0C3] shadow-sm">
+              <div className="flex items-center gap-2.5 text-xs font-extrabold text-[#D32F2F]">
+                <AlertTriangle className="h-4 w-4" />
+                Đã chọn <span className="font-black text-base mx-1">{selectedUserIds.size}</span> tài khoản
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setSelectedUserIds(new Set())}
+                  className="px-3 py-1.5 rounded-xl bg-white border border-[#E1E6F0] text-[#68758D] text-xs font-extrabold hover:bg-[#F8FAFC] cursor-pointer"
+                >
+                  Bỏ chọn tất cả
+                </button>
+                <button
+                  onClick={handleBulkDeleteUsers}
+                  className="px-3 py-1.5 rounded-xl bg-[#FF5D68] text-white text-xs font-extrabold hover:bg-[#D32F2F] flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Xóa {selectedUserIds.size} tài khoản đã chọn
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="rounded-2xl border border-[#E1E6F0] overflow-hidden">
             <table className="w-full text-left text-xs font-bold text-[#18243A]">
               <thead className="bg-[#FAFBFF] border-b border-[#E1E6F0] text-[#68758D] text-[11px] uppercase">
                 <tr>
+                  <th className="p-3 w-10">
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 rounded cursor-pointer accent-[#6C63FF]"
+                      checked={isAllSelected}
+                      onChange={toggleSelectAll}
+                      title="Chọn tất cả"
+                    />
+                  </th>
                   <th className="p-3">Họ và Tên</th>
                   <th className="p-3">Tài khoản (Username)</th>
                   <th className="p-3">Vai Trò</th>
@@ -840,7 +986,19 @@ export const AdminPage: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-[#E1E6F0]">
                 {userList.map(u => (
-                  <tr key={u.id} className="hover:bg-[#FAFBFF]">
+                  <tr key={u.id} className={`transition-colors ${selectedUserIds.has(u.id) ? 'bg-[#EEECFF]' : 'hover:bg-[#FAFBFF]'}`}>
+                    <td className="p-3">
+                      {u.role !== 'superadmin' ? (
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 rounded cursor-pointer accent-[#6C63FF]"
+                          checked={selectedUserIds.has(u.id)}
+                          onChange={() => toggleSelectUser(u.id)}
+                        />
+                      ) : (
+                        <span className="w-4 h-4 inline-flex items-center justify-center text-[#F6B73C]" title="SuperAdmin không thể xóa">👑</span>
+                      )}
+                    </td>
                     <td className="p-3">
                       <div className="flex items-center gap-2.5">
                         <UserAvatar name={u.name} avatarUrl={u.avatar_url || u.avatar} role={u.role} size="sm" />
@@ -888,6 +1046,52 @@ export const AdminPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      <Modal
+        isOpen={isBulkDeleteModalOpen}
+        onClose={() => setIsBulkDeleteModalOpen(false)}
+        title="⚠️ Xác Nhận Xóa Hàng Loạt Tài Khoản"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setIsBulkDeleteModalOpen(false)}>Hủy bỏ</Button>
+            <Button
+              variant="danger"
+              onClick={confirmBulkDeleteUsers}
+              icon={<Trash2 className="h-4 w-4" />}
+            >
+              Xác nhận xóa {selectedUserIds.size} tài khoản
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="p-4 rounded-2xl bg-[#FFEFEF] border border-[#FFC0C3] text-xs font-bold text-[#D32F2F] space-y-1">
+            <div className="font-black text-sm flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4" />
+              Hành động này không thể hoàn tác!
+            </div>
+            <div>Bạn đang chuẩn bị xóa vĩnh viễn <span className="font-black">{selectedUserIds.size}</span> tài khoản khỏi hệ thống.</div>
+          </div>
+
+          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+            {Array.from(selectedUserIds).map(id => {
+              const u = userList.find(u => u.id === id);
+              if (!u) return null;
+              return (
+                <div key={id} className="flex items-center gap-2.5 p-2 rounded-xl bg-[#FAFBFF] border border-[#E1E6F0]">
+                  <UserAvatar name={u.name} role={u.role} size="xs" />
+                  <div className="min-w-0">
+                    <div className="text-xs font-extrabold text-[#18243A] truncate">{u.name}</div>
+                    <div className="text-[10px] font-mono text-[#6C63FF]">{u.username}</div>
+                  </div>
+                  <RoleBadge role={u.role} size="sm" showIcon={false} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </Modal>
 
       {/* Tab 3: Activation Requests */}
       {activeTab === 'activations' && (
@@ -1299,6 +1503,19 @@ export const AdminPage: React.FC = () => {
               placeholder="VD: 0901234567"
               className="mt-1 w-full rounded-xl border border-[#E1E6F0] p-2 text-xs font-bold"
             />
+          </div>
+
+          <div>
+            <label className="block text-xs font-extrabold text-[#18243A]">Phân Lớp Học Cho Người Dùng (Class ID):</label>
+            <select
+              value={newUserClassId}
+              onChange={(e) => setNewUserClassId(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-[#E1E6F0] p-2 text-xs font-extrabold text-[#6C63FF] bg-[#EEECFF]/30"
+            >
+              {classesList.map(c => (
+                <option key={c.id} value={c.id}>{c.name} - {c.room} (GVCN: {c.homeroom_teacher_name})</option>
+              ))}
+            </select>
           </div>
 
           <div>

@@ -9,6 +9,7 @@ import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { UserAvatar } from '../components/ui/UserAvatar';
 import { StudentReportCardModal } from '../components/ui/StudentReportCardModal';
+import { SeatingChartPage } from './SeatingChartPage';
 import {
   Search, Eye, CheckCircle, Download, Upload, UserPlus, Camera, Image, FileSpreadsheet, Phone, MessageSquare, Target, MapPin, Trash2, FileDown, AlertTriangle
 } from 'lucide-react';
@@ -22,6 +23,7 @@ export const StudentsPage: React.FC = () => {
   const { selectedClass, classesList, permittedClasses, studentsList: students, setStudentsList: saveStudentsList } = useAuth();
   const displayClasses = (permittedClasses && permittedClasses.length > 0) ? permittedClasses : classesList;
   const [searchTerm, setSearchTerm] = useState(urlSearchTerm);
+  const [activeTab, setActiveTab] = useState<'list' | 'seating'>('list');
 
   useEffect(() => {
     const q = searchParams.get('search');
@@ -553,15 +555,40 @@ export const StudentsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Header */}
+      {/* Header & Subtabs View Switcher */}
       <div className="flex flex-col gap-3">
-        <div>
-          <h1 className="text-2xl font-extrabold text-[#18243A] sm:text-3xl tracking-tight">
-            Hồ sơ Học sinh {selectedClass.name}
-          </h1>
-          <p className="text-xs text-[#68758D] font-bold mt-1">
-            Danh sách sĩ số {filteredStudents.length}/{selectedClass.student_count} học sinh, ảnh chân dung lưu Database và thông tin liên lạc phụ huynh
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E1E6F0] pb-3">
+          <div>
+            <h1 className="text-2xl font-extrabold text-[#18243A] sm:text-3xl tracking-tight">
+              Hồ sơ Học sinh {selectedClass.name}
+            </h1>
+            <p className="text-xs text-[#68758D] font-bold mt-1">
+              Danh sách sĩ số {filteredStudents.length}/{selectedClass.student_count} học sinh, sơ đồ chỗ ngồi kéo thả 2D và thông tin liên lạc phụ huynh
+            </p>
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-[#FAFBFF] p-1.5 rounded-2xl border border-[#E1E6F0] shrink-0">
+            <button
+              onClick={() => setActiveTab('list')}
+              className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-2 ${
+                activeTab === 'list'
+                  ? 'bg-[#6C63FF] text-white shadow-xs'
+                  : 'text-[#68758D] hover:bg-[#EEECFF]'
+              }`}
+            >
+              📋 Danh sách Hồ sơ
+            </button>
+            <button
+              onClick={() => setActiveTab('seating')}
+              className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-2 ${
+                activeTab === 'seating'
+                  ? 'bg-[#6C63FF] text-white shadow-xs'
+                  : 'text-[#68758D] hover:bg-[#EEECFF]'
+              }`}
+            >
+              🪑 Sơ đồ Chỗ ngồi 2D
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -570,6 +597,58 @@ export const StudentsPage: React.FC = () => {
           </Button>
           <Button size="sm" variant="mint" onClick={() => setIsImportModalOpen(true)} icon={<Upload className="h-4 w-4" />}>
             Nhập file Excel
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => {
+              const newAccounts: User[] = [];
+              let count = 0;
+              (students || []).forEach((st) => {
+                const studentUsername = generateUsername(st.full_name, 'HS');
+                const parentName = st.primary_guardian_name || `Phụ huynh ${st.full_name}`;
+                const parentUsername = generateUsername(parentName, 'PHHS');
+                const targetClassId = st.class_id || selectedClass?.id || '1';
+
+                const stUser: User = {
+                  id: Date.now() + Math.floor(Math.random() * 10000),
+                  public_id: `USR-${Date.now().toString().slice(-4)}-${count}`,
+                  name: st.full_name,
+                  email: `${studentUsername.toLowerCase()}@school.edu.vn`,
+                  username: studentUsername,
+                  role: 'student',
+                  phone: st.primary_guardian_phone || '0901234567',
+                  status: 'active',
+                  scopes: [{ class_id: String(targetClassId), class_name: st.class_name || selectedClass?.name || 'Lớp học', scope_type: 'student' }],
+                };
+                newAccounts.push(stUser);
+
+                const prUser: User = {
+                  id: Date.now() + Math.floor(Math.random() * 10000) + 1,
+                  public_id: `USR-${Date.now().toString().slice(-4)}-P${count}`,
+                  name: parentName,
+                  email: `${parentUsername.toLowerCase()}@school.edu.vn`,
+                  username: parentUsername,
+                  role: 'parent',
+                  phone: st.primary_guardian_phone || '0901234567',
+                  status: 'active',
+                  scopes: [{ class_id: String(targetClassId), class_name: st.class_name || selectedClass?.name || 'Lớp học', scope_type: 'parent' }],
+                };
+                newAccounts.push(prUser);
+                count++;
+              });
+
+              fetch('/thcs/api/system-data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: 'thcs_admin_users', value: newAccounts }),
+              }).catch(() => {});
+
+              showToast(`🎉 ĐÃ CẤP TỰ ĐỘNG ${newAccounts.length} TÀI KHOẢN ĐỒNG LOẠT CHO HỌC SINH & PHỤ HUYNH LỚP ${selectedClass.name}! (Mật khẩu mặc định: 123456)`);
+            }}
+            icon={<CheckCircle className="h-4 w-4" />}
+          >
+            ⚡ Cấp Tài Khoản Đồng Loạt
           </Button>
           <Button size="sm" variant="outline" onClick={handleDownloadExcelTemplate} icon={<FileDown className="h-4 w-4 text-[#6C63FF]" />}>
             Tải file mẫu Excel (.xlsx)
@@ -585,7 +664,12 @@ export const StudentsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Search & Filter Bar */}
+      {/* Subtab View Content */}
+      {activeTab === 'seating' ? (
+        <SeatingChartPage />
+      ) : (
+        <>
+          {/* Search & Filter Bar */}
       <div className="clay-card p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#68758D]" />
@@ -1100,6 +1184,8 @@ export const StudentsPage: React.FC = () => {
           </p>
         </div>
       </Modal>
+        </>
+      )}
 
       {/* STUDENT ELECTRONIC REPORT CARD MODAL */}
       <StudentReportCardModal

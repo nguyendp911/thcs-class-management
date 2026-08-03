@@ -161,6 +161,10 @@ try {
 
     try { $pdo->exec("ALTER TABLE classes MODIFY id VARCHAR(100) NOT NULL;"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE students MODIFY class_id VARCHAR(100) NOT NULL;"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE attendance_sessions MODIFY class_id VARCHAR(100) NOT NULL;"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE attendance_sessions ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE attendance_records MODIFY student_id VARCHAR(100) NOT NULL;"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE attendance_records ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE students ADD COLUMN avatar_url LONGTEXT NULL;"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE students MODIFY COLUMN avatar_url LONGTEXT NULL;"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE users ADD COLUMN avatar_url LONGTEXT NULL;"); } catch (Exception $e) {}
@@ -522,12 +526,12 @@ if ((strpos($requestUri, 'attendance') !== false || strpos($uri, 'attendance') !
         }
 
         $action      = $input['action'] ?? 'save';
-        $classId     = intval($input['class_id'] ?? 1);
-        $sessionDate = preg_replace('/[^0-9\-]/', '', $input['session_date'] ?? date('Y-m-d'));
+        $classId     = strval($input['class_id'] ?? '1');
+        $sessionDate = preg_replace('/[^0-9\-]/', '', strval($input['session_date'] ?? date('Y-m-d')));
         $sessionType = in_array($input['session_type'] ?? '', ['morning', 'afternoon']) ? $input['session_type'] : 'morning';
 
-        if (!$classId || !$sessionDate) {
-            jsonResponse(['success' => false, 'message' => 'Thieu class_id hoac session_date'], 422);
+        if (empty($classId) || empty($sessionDate)) {
+            jsonResponse(['success' => false, 'message' => 'Thiếu class_id hoặc session_date'], 422);
         }
 
         if ($action === 'load') {
@@ -536,15 +540,14 @@ if ((strpos($requestUri, 'attendance') !== false || strpos($uri, 'attendance') !
             $session = $stmt->fetch();
 
             if (!$session) {
-                jsonResponse(['success' => true, 'message' => 'Chua co du lieu diem danh cho buoi nay', 'data' => ['records' => [], 'is_locked' => false]], 200);
+                jsonResponse(['success' => true, 'message' => 'Chưa có dữ liệu điểm danh cho buổi này', 'data' => ['records' => [], 'is_locked' => false]], 200);
             }
 
-            $rStmt = $pdo->prepare("SELECT * FROM attendance_records WHERE session_id = :sid ORDER BY student_id ASC");
+            $rStmt = $pdo->prepare("SELECT * FROM attendance_records WHERE session_id = :sid ORDER BY id ASC");
             $rStmt->execute([':sid' => $session['id']]);
-            $records = $rStmt->fetchAll();
+            $records = $rStmt->fetchAll() ?: [];
 
             foreach ($records as &$r) {
-                $r['student_id']   = intval($r['student_id']);
                 $r['minutes_late'] = isset($r['minutes_late']) && $r['minutes_late'] !== null ? intval($r['minutes_late']) : null;
             }
 
@@ -552,7 +555,7 @@ if ((strpos($requestUri, 'attendance') !== false || strpos($uri, 'attendance') !
                 'success' => true,
                 'data' => [
                     'session_id'   => intval($session['id']),
-                    'class_id'     => intval($session['class_id']),
+                    'class_id'     => $session['class_id'],
                     'session_date' => $session['session_date'],
                     'session_type' => $session['session_type'],
                     'is_locked'    => (bool) $session['is_locked'],
@@ -569,7 +572,7 @@ if ((strpos($requestUri, 'attendance') !== false || strpos($uri, 'attendance') !
 
             $stmt = $pdo->prepare("INSERT INTO attendance_sessions (class_id, session_date, session_type, is_locked) 
                 VALUES (:cid, :date, :type, :locked)
-                ON DUPLICATE KEY UPDATE is_locked = VALUES(is_locked), updated_at = CURRENT_TIMESTAMP");
+                ON DUPLICATE KEY UPDATE is_locked = VALUES(is_locked)");
             $stmt->execute([':cid' => $classId, ':date' => $sessionDate, ':type' => $sessionType, ':locked' => $isLocked]);
 
             $sStmt = $pdo->prepare("SELECT id FROM attendance_sessions WHERE class_id = :cid AND session_date = :date AND session_type = :type LIMIT 1");
@@ -579,12 +582,12 @@ if ((strpos($requestUri, 'attendance') !== false || strpos($uri, 'attendance') !
 
             $uStmt = $pdo->prepare("INSERT INTO attendance_records (session_id, student_id, student_name, status, minutes_late, note)
                 VALUES (:sid, :stuid, :sname, :status, :late, :note)
-                ON DUPLICATE KEY UPDATE status = VALUES(status), minutes_late = VALUES(minutes_late), note = VALUES(note), updated_at = CURRENT_TIMESTAMP");
+                ON DUPLICATE KEY UPDATE status = VALUES(status), minutes_late = VALUES(minutes_late), note = VALUES(note)");
 
             foreach ($records as $r) {
                 $uStmt->execute([
                     ':sid'   => $sessionId,
-                    ':stuid' => intval($r['student_id']),
+                    ':stuid' => strval($r['student_id'] ?? '0'),
                     ':sname' => $r['student_name'] ?? 'Học sinh',
                     ':status'=> $r['status'] ?? 'PRESENT',
                     ':late'  => isset($r['minutes_late']) && $r['minutes_late'] !== null ? intval($r['minutes_late']) : null,
@@ -600,11 +603,11 @@ if ((strpos($requestUri, 'attendance') !== false || strpos($uri, 'attendance') !
                 'data'    => ['session_id' => $sessionId, 'is_locked' => (bool)$isLocked, 'count' => count($records)]
             ]);
         }
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
-        jsonResponse(['success' => false, 'message' => 'Loi server MySQL: ' . $e->getMessage()], 500);
+        jsonResponse(['success' => false, 'message' => 'Lỗi lưu điểm danh MySQL: ' . $e->getMessage()], 200);
     }
 }
 
