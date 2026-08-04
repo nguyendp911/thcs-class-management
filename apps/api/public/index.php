@@ -8,7 +8,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
-function jsonResponse($data, $code = 200) {
+function jsonResponseApp($data, $code = 200) {
     http_response_code($code);
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode($data, JSON_UNESCAPED_UNICODE);
@@ -37,7 +37,7 @@ try {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
     ]);
 } catch (PDOException $e) {
-    jsonResponse(['success' => false, 'error' => 'DATABASE_UNAVAILABLE'], 500);
+    jsonResponseApp(['success' => false, 'error' => 'DATABASE_UNAVAILABLE'], 500);
 }
 
 require __DIR__ . '/v2.php';
