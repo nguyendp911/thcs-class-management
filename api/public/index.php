@@ -335,13 +335,17 @@ if (strpos($requestUri, 'students') !== false || strpos($uri, 'students') !== fa
 
         if ($method === 'POST') {
             $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
-            $studentsList = $input['students'] ?? [];
-            $classId = strval($input['class_id'] ?? '1');
+            $studentsList = $input['students'] ?? null;
+            $classId = strval($input['class_id'] ?? '');
 
-            if (!empty($studentsList) && is_array($studentsList)) {
-                $del = $pdo->prepare("DELETE FROM students WHERE class_id = :cid");
-                $del->execute([':cid' => $classId]);
+            if ($classId === '' || !is_array($studentsList)) {
+                jsonResponse(['success' => false, 'error' => 'Thiếu class_id hoặc danh sách học sinh không hợp lệ'], 422);
+            }
 
+            $del = $pdo->prepare("DELETE FROM students WHERE class_id = :cid");
+            $del->execute([':cid' => $classId]);
+
+            if (!empty($studentsList)) {
                 $ins = $pdo->prepare("INSERT INTO students (public_id, student_code, full_name, avatar_url, gender, date_of_birth, address, status, class_id, class_name, group_name, primary_guardian_name, primary_guardian_phone) VALUES (:pid, :code, :name, :avatar, :gender, :dob, :addr, :status, :cid, :cname, :gname, :pname, :pphone)");
 
                 foreach ($studentsList as $s) {
@@ -361,12 +365,16 @@ if (strpos($requestUri, 'students') !== false || strpos($uri, 'students') !== fa
                         ':pphone' => $s['primary_guardian_phone'] ?? '',
                     ]);
                 }
-
-                $updCount = $pdo->prepare("UPDATE classes SET student_count = :cnt WHERE id = :cid");
-                $updCount->execute([':cnt' => count($studentsList), ':cid' => $classId]);
             }
 
-            jsonResponse(['success' => true, 'message' => 'Đã lưu danh sách học sinh vào MySQL']);
+            $updCount = $pdo->prepare("UPDATE classes SET student_count = :cnt WHERE id = :cid");
+            $updCount->execute([':cnt' => count($studentsList), ':cid' => $classId]);
+
+            jsonResponse([
+                'success' => true,
+                'message' => 'Đã lưu danh sách học sinh vào MySQL',
+                'student_count' => count($studentsList),
+            ]);
         }
     } catch (Throwable $t) {
         jsonResponse(['success' => false, 'error' => $t->getMessage()], 200);

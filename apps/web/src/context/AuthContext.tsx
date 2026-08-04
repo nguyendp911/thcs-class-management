@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { User, SchoolYear, Semester, ClassItem, Student, RoleType } from '../types';
 import { mockUsers, mockSchoolYears, mockSemesters, mockClasses, mockStudents, EMPTY_CLASS } from '../lib/mockData';
-import { syncAllFromDb, saveToDb } from '../lib/dbSync';
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -77,7 +76,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Global Dynamic Students List State - Loaded strictly from MySQL Host API Database
   const [studentsList, setStudentsListState] = useState<Student[]>([]);
 
-  // Auto-sync all data from MySQL server on startup
+  // Load the canonical class list from the relational MySQL API.
   useEffect(() => {
     fetch('/thcs/api/classes')
       .then(res => res.json())
@@ -87,12 +86,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       })
       .catch(() => {});
-
-    syncAllFromDb().then(data => {
-      if (data && data.thcs_admin_classes_v2 && Array.isArray(data.thcs_admin_classes_v2)) {
-        setClassesList(data.thcs_admin_classes_v2);
-      }
-    });
   }, []);
 
   // Check if current logged-in user is SuperAdmin or System Admin
@@ -184,8 +177,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const nextClasses = classesList.map(c => String(c.id) === String(updatedClass.id) ? updatedClass : c);
       setClassesList(nextClasses);
-      saveToDb('thcs_admin_classes_v2', nextClasses);
-      saveToDb(`thcs_students_class_${selectedClass.id}`, newList);
 
       // Post directly to Backend Host MySQL
       fetch('/thcs/api/students', {
@@ -206,7 +197,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateClass = (updatedClass: ClassItem) => {
     const nextList = classesList.map(c => String(c.id) === String(updatedClass.id) ? updatedClass : c);
     setClassesList(nextList);
-    saveToDb('thcs_admin_classes_v2', nextList);
 
     if (String(selectedClass.id) === String(updatedClass.id)) {
       setSelectedClassState(updatedClass);
@@ -223,7 +213,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const addClass = (newClass: ClassItem) => {
     const nextList = [...classesList, newClass];
     setClassesList(nextList);
-    saveToDb('thcs_admin_classes_v2', nextList);
     setSelectedClassState(newClass);
 
     // Sync to MySQL relational classes table directly
@@ -237,7 +226,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const deleteClass = (id: number | string) => {
     const nextList = classesList.filter(c => String(c.id) !== String(id));
     setClassesList(nextList);
-    saveToDb('thcs_admin_classes_v2', nextList);
 
     if (!selectedClass || String(selectedClass.id) === String(id)) {
       const nextSelected = nextList.length > 0 ? nextList[0] : EMPTY_CLASS;
