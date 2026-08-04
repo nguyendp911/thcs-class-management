@@ -20,7 +20,7 @@ export const StudentsPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlSearchTerm = searchParams.get('search') || '';
 
-  const { selectedClass, classesList, permittedClasses, studentsList: students, setStudentsList: saveStudentsList } = useAuth();
+  const { selectedClass, setSelectedClass, classesList, permittedClasses, studentsList: students, setStudentsList: saveStudentsList } = useAuth();
   const displayClasses = (permittedClasses && permittedClasses.length > 0) ? permittedClasses : classesList;
   const [searchTerm, setSearchTerm] = useState(urlSearchTerm);
   const [activeTab, setActiveTab] = useState<'list' | 'seating'>('list');
@@ -463,11 +463,18 @@ export const StudentsPage: React.FC = () => {
     const generatedUsername = generateUsername(fullName, 'HS');
 
     const targetClass = classesList.find(c => String(c.id) === String(newClassId)) || selectedClass;
+    const isDifferentClass = targetClass && selectedClass && String(targetClass.id) !== String(selectedClass.id);
+
+    if (isDifferentClass) {
+      setSelectedClass(targetClass);
+    }
+
+    const currentStudents = students || [];
 
     const newStudent: Student = {
-      id: students.length + 1,
-      public_id: `STU-7A1-${(students.length + 1).toString().padStart(3, '0')}`,
-      student_code: `HS2025${(students.length + 1).toString().padStart(3, '0')}`,
+      id: Date.now(),
+      public_id: `STU-${targetClass?.code || 'CLASS'}-${Date.now().toString().slice(-4)}`,
+      student_code: `HS${new Date().getFullYear()}${Math.floor(1000 + Math.random() * 9000)}`,
       first_name: newFirstName,
       last_name: newLastName,
       full_name: fullName,
@@ -479,7 +486,7 @@ export const StudentsPage: React.FC = () => {
       class_id: targetClass?.id || selectedClass?.id || 0,
       class_name: targetClass?.name || selectedClass?.name || 'Lớp học',
       group_name: newGroup,
-      roll_number: students.length + 1,
+      roll_number: (currentStudents.length || 0) + 1,
       primary_guardian_name: newGuardianName || 'Phụ huynh',
       primary_guardian_phone: newGuardianPhone || '0901234567',
     };
@@ -503,7 +510,7 @@ export const StudentsPage: React.FC = () => {
 
     mockUsers.push(newAccount);
 
-    saveStudentsList([newStudent, ...students]);
+    saveStudentsList([newStudent, ...currentStudents]);
     setIsAddModalOpen(false);
     showToast(`🎉 Đã thêm ${fullName}! Tự động tạo tài khoản: ${generatedUsername} (Mật khẩu: 123456)`);
 

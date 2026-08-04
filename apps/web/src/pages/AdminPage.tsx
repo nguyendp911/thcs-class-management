@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { mockRolePermissions } from '../lib/mockData';
+import { mockRolePermissions, mockUsers } from '../lib/mockData';
 import type { ClassItem, User, RolePermissionMatrix } from '../types';
 import { generateUsername } from '../utils/accountUtils';
 import { saveToDb } from '../lib/dbSync';
@@ -65,14 +65,8 @@ export const AdminPage: React.FC = () => {
   const { currentRole, currentUser, updateUserPassword, selectedClass, setSelectedClass, updateClass, addClass, deleteClass, classesList, studentsList } = useAuth();
   const [activeTab, setActiveTab] = useState<'classes' | 'subject_teachers' | 'rbac' | 'users' | 'activations' | 'database' | 'logs'>('classes');
 
-  // Subject Teachers State
-  const [subjectTeachers, setSubjectTeachers] = useState<SubjectTeacherItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('thcs_subject_teachers');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return DEFAULT_SUBJECT_TEACHERS;
-  });
+  // Subject Teachers State - Saved directly in MySQL via Host API
+  const [subjectTeachers, setSubjectTeachers] = useState<SubjectTeacherItem[]>(DEFAULT_SUBJECT_TEACHERS);
 
   const [editingSubjectTeacher, setEditingSubjectTeacher] = useState<SubjectTeacherItem | null>(null);
   const [editSubjectTeacherName, setEditSubjectTeacherName] = useState('');
@@ -85,7 +79,8 @@ export const AdminPage: React.FC = () => {
     saveToDb('thcs_subject_teachers', newList);
   };
 
-  const [userList, setUserList] = useState<User[]>([]);
+  // Users State - Loaded directly from MySQL Host API Database
+  const [userList, setUserList] = useState<User[]>(mockUsers);
 
   const saveUsersListState = (newUsers: User[]) => {
     const map = new Map();

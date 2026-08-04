@@ -34,7 +34,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Helper to read saved session synchronously on React startup
   const getSavedUser = (): User => {
     try {
-      const saved = localStorage.getItem('thcs_logged_user') || sessionStorage.getItem('thcs_logged_user');
+      const saved = sessionStorage.getItem('thcs_logged_user') || localStorage.getItem('thcs_logged_user');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return mockUsers[0];
@@ -42,7 +42,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const getSavedRole = (): RoleType => {
     try {
-      const saved = localStorage.getItem('thcs_logged_role') || sessionStorage.getItem('thcs_logged_role');
+      const saved = sessionStorage.getItem('thcs_logged_role') || localStorage.getItem('thcs_logged_role');
       if (saved) return saved as RoleType;
     } catch (e) {}
     return 'superadmin';
@@ -50,8 +50,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const getSavedAuth = (): boolean => {
     try {
-      const savedUser = localStorage.getItem('thcs_logged_user') || sessionStorage.getItem('thcs_logged_user');
-      const savedRole = localStorage.getItem('thcs_logged_role') || sessionStorage.getItem('thcs_logged_role');
+      const savedUser = sessionStorage.getItem('thcs_logged_user') || localStorage.getItem('thcs_logged_user');
+      const savedRole = sessionStorage.getItem('thcs_logged_role') || localStorage.getItem('thcs_logged_role');
       if (savedUser && savedRole) return true;
     } catch (e) {}
     return true; // Default stay logged in as SuperAdmin
@@ -68,13 +68,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     mockSemesters[0] || { id: 1, code: 'HK1', name: 'Học kỳ I', school_year_id: 1, status: 'active' }
   );
 
-  // Classes List State - Defaults to empty array []
+  // Classes List State - Loaded strictly from MySQL Host API Database
   const [classesList, setClassesList] = useState<ClassItem[]>([]);
 
   // Selected Class State - Defaults to EMPTY_CLASS
   const [selectedClass, setSelectedClassState] = useState<ClassItem>(EMPTY_CLASS);
 
-  // Global Dynamic Students List State
+  // Global Dynamic Students List State - Loaded strictly from MySQL Host API Database
   const [studentsList, setStudentsListState] = useState<Student[]>([]);
 
   // Auto-sync all data from MySQL server on startup
@@ -82,7 +82,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fetch('/thcs/api/classes')
       .then(res => res.json())
       .then(res => {
-        if (res && Array.isArray(res.classes)) {
+        if (res && res.success && Array.isArray(res.classes)) {
           setClassesList(res.classes);
         }
       })
@@ -127,20 +127,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return matched.length > 0 ? matched : [classesList[0]];
   }, [classesList, currentUser, currentRole, isSuperAdmin]);
 
-  // Keep mockClasses array in sync with classesList & restore last selected class
+  // Keep mockClasses array in sync with classesList & select default class
   useEffect(() => {
     mockClasses.length = 0;
     mockClasses.push(...classesList);
 
     if (classesList.length > 0) {
-      const savedClassId = localStorage.getItem('thcs_selected_class_id');
-      const found = classesList.find(c => String(c.id) === String(savedClassId));
-      if (found && (isSuperAdmin || permittedClasses.some(p => String(p.id) === String(found.id)))) {
-        setSelectedClassState(found);
-      } else if (permittedClasses.length > 0) {
-        setSelectedClassState(permittedClasses[0]);
-      } else {
-        setSelectedClassState(classesList[0]);
+      const isSelectedValid = classesList.some(c => String(c.id) === String(selectedClass?.id));
+      if (!isSelectedValid) {
+        setSelectedClassState(permittedClasses.length > 0 ? permittedClasses[0] : classesList[0]);
       }
     } else {
       setSelectedClassState(EMPTY_CLASS);
@@ -153,14 +148,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const isSelectedPermitted = permittedClasses.some(c => String(c.id) === String(selectedClass?.id));
       if (!isSelectedPermitted) {
         setSelectedClassState(permittedClasses[0]);
-        try {
-          localStorage.setItem('thcs_selected_class_id', String(permittedClasses[0].id));
-        } catch (e) {}
       }
     }
   }, [permittedClasses, isSuperAdmin, selectedClass?.id]);
 
-  // Load students automatically per selected class with LocalStorage fallback + MySQL API fetch
+  // Load students automatically per selected class strictly from MySQL API
   useEffect(() => {
     if (!selectedClass || !selectedClass.id || selectedClass.id === 0) {
       setStudentsListState([]);
@@ -168,33 +160,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    const classKey = `thcs_students_class_${selectedClass.id}`;
-    const cached = localStorage.getItem(classKey);
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) {
-          setStudentsListState(parsed);
-          mockStudents.length = 0;
-          mockStudents.push(...parsed);
-        }
-      } catch (e) {}
-    } else {
-      setStudentsListState([]);
-      mockStudents.length = 0;
-    }
-
     fetch(`/thcs/api/students?class_id=${selectedClass.id}`)
       .then(res => res.json())
       .then(data => {
-        if (data.success && Array.isArray(data.students)) {
+        if (data && data.success && Array.isArray(data.students)) {
           setStudentsListState(data.students);
           mockStudents.length = 0;
           mockStudents.push(...data.students);
-          try {
-            localStorage.setItem(classKey, JSON.stringify(data.students));
-            localStorage.removeItem('thcs_student_avatars');
-          } catch (e) {}
         }
       })
       .catch(() => {});
@@ -206,12 +178,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     mockStudents.push(...newList);
 
     if (selectedClass && selectedClass.id !== 0) {
-      const classKey = `thcs_students_class_${selectedClass.id}`;
-      try {
-        localStorage.setItem(classKey, JSON.stringify(newList));
-        localStorage.setItem('thcs_selected_class_id', String(selectedClass.id));
-      } catch (e) {}
-
       // Update student_count in selectedClass
       const updatedClass = { ...selectedClass, student_count: newList.length };
       setSelectedClassState(updatedClass);
@@ -219,9 +185,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const nextClasses = classesList.map(c => String(c.id) === String(updatedClass.id) ? updatedClass : c);
       setClassesList(nextClasses);
       saveToDb('thcs_admin_classes_v2', nextClasses);
-      saveToDb(classKey, newList);
+      saveToDb(`thcs_students_class_${selectedClass.id}`, newList);
 
-      // Post to Backend MySQL directly
+      // Post directly to Backend Host MySQL
       fetch('/thcs/api/students', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -235,15 +201,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const setSelectedClass = (cls: ClassItem) => {
     setSelectedClassState(cls);
-    localStorage.setItem('thcs_selected_class_id', String(cls.id));
   };
 
   const updateClass = (updatedClass: ClassItem) => {
-    const nextList = classesList.map(c => c.id === updatedClass.id ? updatedClass : c);
+    const nextList = classesList.map(c => String(c.id) === String(updatedClass.id) ? updatedClass : c);
     setClassesList(nextList);
     saveToDb('thcs_admin_classes_v2', nextList);
 
-    if (selectedClass.id === updatedClass.id) {
+    if (String(selectedClass.id) === String(updatedClass.id)) {
       setSelectedClassState(updatedClass);
     }
 
@@ -259,7 +224,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const nextList = [...classesList, newClass];
     setClassesList(nextList);
     saveToDb('thcs_admin_classes_v2', nextList);
-    setSelectedClass(newClass);
+    setSelectedClassState(newClass);
 
     // Sync to MySQL relational classes table directly
     fetch('/thcs/api/classes', {
@@ -275,7 +240,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     saveToDb('thcs_admin_classes_v2', nextList);
 
     if (!selectedClass || String(selectedClass.id) === String(id)) {
-      setSelectedClassState(nextList.length > 0 ? nextList[0] : EMPTY_CLASS);
+      const nextSelected = nextList.length > 0 ? nextList[0] : EMPTY_CLASS;
+      setSelectedClassState(nextSelected);
     }
 
     // Sync DELETE to MySQL relational classes table directly

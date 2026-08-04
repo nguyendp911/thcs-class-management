@@ -1,12 +1,9 @@
-// Centralized Direct MySQL & LocalStorage Database Persistence Utility for THCS Web App
+// Centralized Direct MySQL Database Persistence Utility for THCS Web App (NO LOCALSTORAGE)
 
 export const saveToDb = (key: string, data: any) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(data));
-    window.dispatchEvent(new CustomEvent('thcs_db_updated', { detail: { key, data } }));
-  } catch (e) {}
+  window.dispatchEvent(new CustomEvent('thcs_db_updated', { detail: { key, data } }));
 
-  // Direct MySQL storage on server
+  // Direct MySQL storage on host server
   fetch('/thcs/api/system-data', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -20,11 +17,6 @@ export const syncAllFromDb = async (): Promise<Record<string, any>> => {
     if (!res.ok) return {};
     const json = await res.json();
     if (json && json.data && typeof json.data === 'object') {
-      Object.keys(json.data).forEach(key => {
-        try {
-          localStorage.setItem(key, JSON.stringify(json.data[key]));
-        } catch (e) {}
-      });
       window.dispatchEvent(new Event('thcs_db_updated'));
       return json.data;
     }
