@@ -48,7 +48,7 @@ const moduleLabels: Record<string, string> = {
   reports: 'Báo cáo',
 };
 
-const chartColors = ['#9b8cff', '#60d9b2', '#ffb68a', '#74bdf8'];
+const chartColors = ['#2563eb', '#0f766e', '#d97706', '#64748b'];
 
 export const DashboardPage: React.FC = () => {
   const { selectedClass } = useAuth();
@@ -142,13 +142,13 @@ export const DashboardPage: React.FC = () => {
                 <div className="clay-chart">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={data.attendance_trend} barGap={4}>
-                      <CartesianGrid strokeDasharray="5 8" stroke="#ddd8f1" vertical={false} />
-                      <XAxis dataKey="date" tick={{ fill: '#6d6685', fontSize: 12 }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fill: '#6d6685', fontSize: 12 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                      <Tooltip contentStyle={{ borderRadius: 18, border: 'none', boxShadow: '0 16px 30px rgba(94,74,121,.15)' }} />
-                      <Bar dataKey="present" name="Có mặt" fill="#60d9b2" radius={[9, 9, 3, 3]} />
-                      <Bar dataKey="late" name="Muộn" fill="#f7c96d" radius={[9, 9, 3, 3]} />
-                      <Bar dataKey="absent" name="Vắng" fill="#ff91a3" radius={[9, 9, 3, 3]} />
+                      <CartesianGrid strokeDasharray="3 5" stroke="#e2e8f0" vertical={false} />
+                      <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                      <Tooltip contentStyle={{ borderRadius: 10, border: '1px solid #e2e8f0', boxShadow: '0 10px 24px rgba(15,23,42,.10)' }} />
+                      <Bar dataKey="present" name="Có mặt" fill="#0f766e" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="late" name="Muộn" fill="#d97706" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="absent" name="Vắng" fill="#dc2626" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>

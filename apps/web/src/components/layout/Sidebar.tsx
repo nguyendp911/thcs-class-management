@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   Megaphone,
   MessageCircleMore,
+  School,
   ShieldAlert,
   Sparkles,
   Users,
@@ -40,11 +41,11 @@ export const Sidebar: React.FC = () => {
     <aside className="clay-sidebar">
       <div className="clay-brand">
         <div className="clay-brand__mark">
-          <img src="/thcs/logo.png" alt="EduClass" />
+          <School aria-hidden="true" />
         </div>
         <div>
           <strong>EduClass</strong>
-          <span>MySQL Live Workspace</span>
+          <span>Quản trị lớp học</span>
         </div>
       </div>
 
@@ -73,8 +74,8 @@ export const Sidebar: React.FC = () => {
       <div className="clay-sidebar__footer">
         <ClayIcon icon={ChartNoAxesCombined} tone="mint" size="sm" />
         <div>
-          <strong>Dữ liệu trực tiếp</strong>
-          <span>Không cache trình duyệt</span>
+          <strong>Dữ liệu đã kết nối</strong>
+          <span>Đồng bộ từ MySQL</span>
         </div>
       </div>
     </aside>

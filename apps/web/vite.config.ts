@@ -14,8 +14,16 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
+      '/thcs/api': {
+        target: 'https://vie.info.vn',
+        changeOrigin: true,
+      },
+    },
+  },
+  preview: {
+    proxy: {
+      '/thcs/api': {
+        target: 'https://vie.info.vn',
         changeOrigin: true,
       },
     },

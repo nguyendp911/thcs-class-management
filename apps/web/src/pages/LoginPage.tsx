@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Database, LockKeyhole, LogIn, ShieldCheck, UserRound } from 'lucide-react';
+import { Database, LockKeyhole, LogIn, School, ShieldCheck, UserRound } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../lib/api';
@@ -38,11 +38,11 @@ export const LoginPage: React.FC = () => {
       <div className="clay-login__orb clay-login__orb--two" />
       <section className="clay-login__intro">
         <div className="clay-login__logo">
-          <img src="/thcs/logo.png" alt="EduClass" />
+          <School aria-label="EduClass" />
         </div>
         <span className="clay-eyebrow">Hệ thống quản trị lớp học</span>
-        <h1>Dữ liệu thật.<br />Trải nghiệm thật dễ chịu.</h1>
-        <p>Mọi phiên đăng nhập, KPI và hồ sơ đều được xử lý trực tiếp trên MySQL của nhà trường.</p>
+        <h1>Quản trị lớp học.<br />Dữ liệu tập trung.</h1>
+        <p>Theo dõi học sinh, điểm danh, học tập và vận hành lớp trên một hệ thống dữ liệu thống nhất.</p>
         <div className="clay-login__signals">
           <div><ClayIcon icon={Database} tone="mint" /><span><strong>MySQL live</strong><small>Không dữ liệu giả lập</small></span></div>
           <div><ClayIcon icon={ShieldCheck} tone="lavender" /><span><strong>Cookie HttpOnly</strong><small>Session lưu phía server</small></span></div>

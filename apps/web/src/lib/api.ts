@@ -46,7 +46,11 @@ export async function apiRequest<T>(path: string, options: ApiOptions = {}): Pro
   });
 
   const contentType = response.headers.get('content-type') || '';
-  const payload = contentType.includes('application/json') ? await response.json() : await response.text();
+  const isJson = contentType.includes('application/json');
+  const payload = isJson ? await response.json() : await response.text();
+  if (!isJson) {
+    throw new ApiError('Máy chủ trả về dữ liệu không đúng định dạng JSON', response.status, payload);
+  }
   if (!response.ok) {
     const message =
       typeof payload === 'object' && payload && 'error' in payload
