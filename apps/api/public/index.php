@@ -37,8 +37,10 @@ try {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
     ]);
 } catch (PDOException $e) {
-    jsonResponse(['success' => false, 'error' => 'Database connection failed: ' . $e->getMessage()], 200);
+    jsonResponse(['success' => false, 'error' => 'DATABASE_UNAVAILABLE'], 500);
 }
+
+require __DIR__ . '/v2.php';
 
 // -------------------------------------------------------------
 // Database Schema Migration (Safe individual try-catch blocks)

@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import sys
 
@@ -16,6 +17,11 @@ try:
     subprocess.run(["npm", "--prefix", "apps/web", "run", "build"], cwd=ROOT_DIR, check=True, shell=True)
 
     print("\n2. 📦 Đồng bộ tệp tin build vào thư mục gốc...")
+    assets_dir = os.path.join(ROOT_DIR, 'assets')
+    if os.path.commonpath([ROOT_DIR, assets_dir]) != ROOT_DIR:
+        raise RuntimeError('Invalid assets directory')
+    if os.path.isdir(assets_dir):
+        shutil.rmtree(assets_dir)
     cmd = "Copy-Item -Path 'apps/web/dist/*' -Destination '.' -Recurse -Force"
     subprocess.run(["powershell", "-Command", cmd], cwd=ROOT_DIR, check=True, shell=True)
 

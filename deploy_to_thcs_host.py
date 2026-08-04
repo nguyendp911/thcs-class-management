@@ -64,6 +64,33 @@ def upload_directory_recursive(ftp, local_dir_path, remote_dir_path):
             remote_file = os.path.join(remote_dir_path, rel_path).replace('\\', '/')
             upload_file(ftp, local_file, remote_file)
 
+def clear_current_remote_directory(ftp):
+    for entry in ftp.nlst():
+        name = entry.replace('\\', '/').rstrip('/').rsplit('/', 1)[-1]
+        if name in ('', '.', '..'):
+            continue
+        try:
+            ftp.delete(name)
+        except error_perm:
+            ftp.cwd(name)
+            clear_current_remote_directory(ftp)
+            ftp.cwd('..')
+            ftp.rmd(name)
+
+def clear_remote_assets(ftp):
+    """Remove stale generated bundles without touching anything outside assets/."""
+    original_dir = ftp.pwd()
+    try:
+        ftp.cwd('assets')
+    except error_perm as exc:
+        if str(exc).startswith('550'):
+            return
+        raise
+    try:
+        clear_current_remote_directory(ftp)
+    finally:
+        ftp.cwd(original_dir)
+
 def main():
     ftp = None
     for attempt in range(3):
@@ -87,6 +114,7 @@ def main():
 
     try:
         print(f"\n📦 Starting upload directly to FTP root (/home/kjioxydi/public_html/thcs/)...")
+        clear_remote_assets(ftp)
         for item in ITEMS_TO_UPLOAD:
             local_path = os.path.join(LOCAL_ROOT, item)
             if not os.path.exists(local_path):
