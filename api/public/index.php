@@ -397,17 +397,22 @@ if (strpos($requestUri, 'users') !== false || strpos($uri, 'users') !== false) {
                         role = VALUES(role),
                         status = VALUES(status)
                 ");
-
-            $delSt = $pdo->prepare("DELETE FROM students WHERE class_id = :cid");
-            $delSt->execute([':cid' => strval($id)]);
-
-            $delSys = $pdo->prepare("DELETE FROM system_data WHERE data_key = :k");
-            $delSys->execute([':k' => "thcs_students_class_" . strval($id)]);
-
-            jsonResponse(['success' => true, 'message' => 'Da xoa lop hoc thanh cong']);
-        } else {
-            jsonResponse(['error' => 'Thieu ID lop hoc'], 400);
+                $uStmt->execute([
+                    ':pid'   => $input['public_id'] ?? ('USR-' . rand(1000, 9999)),
+                    ':name'  => $input['name'] ?? '',
+                    ':uname' => $input['username'],
+                    ':email' => $input['email'] ?? null,
+                    ':phone' => $input['phone'] ?? null,
+                    ':pass'  => $passHash,
+                    ':role'  => $input['role'] ?? 'homeroom_teacher',
+                    ':st'    => $input['status'] ?? 'active',
+                ]);
+                jsonResponse(['success' => true, 'message' => 'Tài khoản đã được ghi nhận vào MySQL Database']);
+            }
+            jsonResponse(['success' => true]);
         }
+    } catch (Throwable $t) {
+        jsonResponse(['success' => false, 'error' => $t->getMessage()], 200);
     }
 }
 
